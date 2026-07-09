@@ -38,6 +38,11 @@ python -m venv .venv
 HelloAgents的`ReActAgent`，然后开始自由探索。探索记忆存在`exploration_logs/<game_id>.json`里，
 按game_id分文件，重复运行不会互相污染。
 
+运行时终端会打印一个本地网页地址（默认`http://127.0.0.1:8765`），浏览器打开就能实时看到
+LLM调用/工具调用/敏感界面拦截等日志（`core/log_broadcaster.py`，给`ReActAgent`自带的
+TraceLogger包了一层SSE推送，不影响原有的`memory/traces/`落盘）。端口可以在profile.yaml里加
+`dashboard: {host: ..., port: ...}`覆盖。
+
 ## 接入新游戏
 
 复制`games/_template/`，按里面的README checklist填。验证标准：接入过程中`core/`目录

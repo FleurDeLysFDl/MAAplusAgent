@@ -25,3 +25,10 @@ sensitive_keywords_path: games/无期迷途/sensitive_keywords.yaml
 exploration_goal_hint: >
   策略养成类手游，主要界面包括城建、派遣、探索地图。
   探索时优先关注新出现的建筑/功能入口。
+
+max_steps: 300
+
+# 可选：不写就用默认的127.0.0.1:8765
+# dashboard:
+#   host: 127.0.0.1
+#   port: 8765

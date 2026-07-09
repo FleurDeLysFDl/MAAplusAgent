@@ -20,6 +20,7 @@ import yaml
 from mcp.server.fastmcp import FastMCP
 
 from maa.controller import AdbController
+from maa.define import LoggingLevelEnum
 from maa.pipeline import JOCR, JRecognitionType
 from maa.resource import Resource
 from maa.tasker import Tasker
@@ -27,7 +28,17 @@ from maa.toolkit import Toolkit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from exploration_memory import ExplorationMemory  # noqa: E402
-from safety_guard import SafetyGuard, load_sensitive_keywords  # noqa: E402
+from safety_guard import (  # noqa: E402
+    SafetyGuard,
+    load_click_forbidden_keywords,
+    load_sensitive_keywords,
+)
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+# MaaFramework默认会把Error级别日志直接打到stdout（还带ANSI颜色），
+# 但本进程的stdout被MCP用作JSONRPC over stdio的传输通道，两者混在一起会
+# 导致客户端解析JSONRPC消息失败。这里关闭stdout日志，改落盘到文件。
 
 
 def _load_profile(path: str) -> dict[str, Any]:
@@ -68,6 +79,9 @@ def build_server(profile_path: str) -> FastMCP:
     profile = _load_profile(profile_path)
     game_id = profile["game_id"]
 
+    Tasker.set_stdout_level(LoggingLevelEnum.Off)
+    Tasker.set_log_dir(PROJECT_ROOT / "exploration_logs" / "maa_debug" / game_id)
+
     adb_path, address = _resolve_adb(profile)
     controller = AdbController(adb_path=adb_path, address=address)
     if not controller.post_connection().wait().succeeded:
@@ -83,9 +97,15 @@ def build_server(profile_path: str) -> FastMCP:
     with open(profile["interface_path"], "r", encoding="utf-8") as f:
         interface_json = json.load(f)
 
-    safety_guard = SafetyGuard(load_sensitive_keywords(profile))
+    safety_guard = SafetyGuard(
+        load_sensitive_keywords(profile),
+        load_click_forbidden_keywords(profile),
+    )
     memory = ExplorationMemory(game_id)
     image_cache: dict[str, Any] = {}
+    # click_on_image只信任"最近一次screenshot()对应的原图"，防止LLM拿一张过期截图上
+    # 估算出的坐标去点当前画面（画面可能早就翻篇了）
+    state: dict[str, str | None] = {"last_image_ref": None}
 
     def _store_image(image: Any) -> str:
         ref = uuid.uuid4().hex
@@ -95,6 +115,14 @@ def build_server(profile_path: str) -> FastMCP:
         return ref
 
     mcp = FastMCP(f"maa-mcp-{game_id}")
+
+    def _box_to_list(box: Any) -> list[int]:
+        # MaaFw把all_results/filtered_results/best_result里的box从原始JSON数组
+        # 直接塞进dataclass字段，并不会像其它API那样转成Rect对象，所以运行时box
+        # 可能是list也可能是Rect，两种都要认
+        if isinstance(box, (list, tuple)):
+            return [int(v) for v in box]
+        return [box.x, box.y, box.w, box.h]
 
     @mcp.tool()
     def screenshot() -> dict:
@@ -111,15 +139,17 @@ def build_server(profile_path: str) -> FastMCP:
                     text = getattr(r, "text", None)
                     if text is not None:
                         ocr_texts.append(
-                            {"text": text, "box": [r.box.x, r.box.y, r.box.w, r.box.h]}
+                            {"text": text, "box": _box_to_list(r.box)}
                         )
 
         sensitive_hits = safety_guard.register_screenshot(ocr_texts)
         _, visited_count, is_novel = memory.visit([t["text"] for t in ocr_texts])
 
+        image_ref = _store_image(image)
+        state["last_image_ref"] = image_ref
         result: dict[str, Any] = {
             "ocr_texts": ocr_texts,
-            "image_ref": _store_image(image),
+            "image_ref": image_ref,
             "is_novel": is_novel,
             "visited_count": visited_count,
         }
@@ -131,7 +161,10 @@ def build_server(profile_path: str) -> FastMCP:
 
     @mcp.tool()
     def get_raw_image(image_ref: str) -> str:
-        """结构化信息不够用时（比如没有文字的图标类按钮），取原图base64给多模态LLM直接看"""
+        """结构化信息不够用时（比如没有文字的图标类按钮、需要点弹窗外空白区域），
+        取原图base64给多模态LLM直接看。返回值会被上层agent_runner.py特殊处理成真正
+        的图片内容块塞进对话，不是普通文本，不要把这个方法的返回值当文本摘要来读。
+        """
         image = image_cache.get(image_ref)
         if image is None:
             raise ValueError(f"image_ref不存在或已过期: {image_ref}")
@@ -139,6 +172,30 @@ def build_server(profile_path: str) -> FastMCP:
         if not ok:
             raise RuntimeError("图像编码失败")
         return base64.b64encode(buf.tobytes()).decode("ascii")
+
+    @mcp.tool()
+    def click_on_image(image_ref: str, x: int, y: int) -> str:
+        """在get_raw_image返回的原图上按像素坐标点击。两种场景用这个：
+        1. 没有文字、OCR识别不出来的图标类按钮（比如关闭×、返回箭头）
+        2. 需要点弹窗/浮层外的空白区域来关闭它（press_back不生效，或者明确要点空白处
+           本身而不是"返回上一级"时）
+
+        不校验OCR候选框白名单，只校验image_ref必须是最近一次screenshot()的结果（防止
+        对着一张过期截图估算出的坐标去点当前画面）、以及坐标必须落在截图范围内。请只在
+        screenshot()的OCR结果里确实找不到目标、并且已经调用get_raw_image看过原图、
+        确认了目标位置之后再用这个工具，不要凭空估算坐标。
+        """
+        if image_ref != state["last_image_ref"]:
+            raise ValueError("image_ref不是最近一次screenshot()的结果，请先重新screenshot()")
+        image = image_cache.get(image_ref)
+        if image is None:
+            raise ValueError(f"image_ref不存在或已过期: {image_ref}")
+        height, width = image.shape[:2]
+        if not (0 <= x < width and 0 <= y < height):
+            raise ValueError(f"坐标({x},{y})超出截图范围({width}x{height})")
+        safety_guard.validate_click_on_image(x, y)
+        controller.post_click(x, y).wait()
+        return "clicked"
 
     @mcp.tool()
     def click(x: int, y: int) -> str:
@@ -153,6 +210,14 @@ def build_server(profile_path: str) -> FastMCP:
         safety_guard.validate_swipe(x1, y1, x2, y2)
         controller.post_swipe(x1, y1, x2, y2, duration_ms).wait()
         return "swiped"
+
+    ANDROID_KEYCODE_BACK = 4
+
+    @mcp.tool()
+    def press_back() -> str:
+        """发送安卓系统返回键，用于关闭弹窗/浮层/返回上一级界面，不需要猜坐标"""
+        controller.post_click_key(ANDROID_KEYCODE_BACK).wait()
+        return "pressed_back"
 
     @mcp.tool()
     def list_known_tasks() -> list[dict]:

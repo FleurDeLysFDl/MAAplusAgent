@@ -23,3 +23,8 @@ sensitive_keywords_path: games/你的游戏/sensitive_keywords.yaml
 exploration_goal_hint: >
   简单描述游戏类型和界面特点，用于注入探索Prompt模板，
   帮助LLM判断该优先关注哪些方向。
+
+# 可选：实时日志面板的地址，不写就用默认的127.0.0.1:8765
+# dashboard:
+#   host: 127.0.0.1
+#   port: 8765

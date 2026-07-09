@@ -2,4 +2,5 @@
 __pycache__/
 *.pyc
 .env
-exploration_logs/*.json
+exploration_logs/
+memory/

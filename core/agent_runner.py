@@ -26,10 +26,18 @@ from hello_agents.tools.circuit_breaker import CircuitBreaker
 from hello_agents.tools.errors import ToolErrorCode
 from hello_agents.tools.response import ToolResponse
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from log_broadcaster import LogBroadcaster, attach_broadcaster  # noqa: E402
+from react_agent_vision import install_vision_support  # noqa: E402
+
+install_vision_support()
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 MCP_SERVER_SCRIPT = Path(__file__).resolve().parent / "maa_mcp_server.py"
 
 DEFAULT_MAX_STEPS = 30
+DEFAULT_DASHBOARD_HOST = "127.0.0.1"
+DEFAULT_DASHBOARD_PORT = 8765
 
 EXPLORATION_PROMPT_TEMPLATE = """
 你正在自由探索手游【{display_name}】。
@@ -39,7 +47,12 @@ EXPLORATION_PROMPT_TEMPLATE = """
 1. 尽量发现你还没见过的界面和功能
 2. 遇到已知任务时优先调用 list_known_tasks / run_known_task，不要重复摸索
 3. 点击(click)/滑动(swipe)前必须先调用 screenshot()，坐标必须来自screenshot()返回的OCR候选框，不要自己估算坐标
-4. 如果screenshot()返回结果里出现sensitive_warning，立即停止操作，调用Finish工具汇报情况
+4. 需要关闭弹窗/浮层、返回上一级界面时，优先调用press_back（安卓系统返回键），不需要猜坐标；
+   press_back无效时，或者要点没有文字、OCR识别不出来的图标类按钮（比如关闭×、返回箭头）时，
+   调用get_raw_image看原图，确认目标实际像素坐标后用click_on_image点击，不要凭空估算坐标
+5. 如果screenshot()返回结果里出现sensitive_warning，立即停止操作，调用Finish工具汇报情况
+6. 不要进入战斗/关卡/副本类功能：看到"进入战斗"、"作战开始"等战斗相关按钮不要点击，
+   识别到这是战斗/编队/关卡界面后直接返回或换个方向探索，不要摸索战斗内部的具体玩法
 
 本次探索最多执行 {max_steps} 步。
 """
@@ -50,7 +63,7 @@ class MCPServerBridge:
 
     ReActAgent/ToolRegistry都是同步调用，而mcp SDK的ClientSession是异步的，
     这里用一个专属的asyncio事件循环+后台线程做桥接，保证子进程只启动一次，
-    截图缓存(image_ref)等服务端状态在整个探索会话内保持连续。
+    safety_guard的坐标白名单、exploration memory等服务端状态在整个探索会话内保持连续。
     """
 
     def __init__(self, command: str, args: list[str], cwd: str | None = None):
@@ -132,6 +145,13 @@ class MCPTool(Tool):
         except Exception as e:
             return ToolResponse.error(code=ToolErrorCode.EXECUTION_ERROR, message=str(e))
 
+        # get_raw_image返回的是原始base64字符串（走call_tool的非JSON兜底分支包成
+        # {"text": base64str}），这里直接原样透传，不要JSON包一层：
+        # react_agent_vision.py的补丁靠result==纯base64字符串来识别"这是张图"，
+        # 拿去拼image_url内容块给多模态LLM看，包一层JSON会让这个识别失效
+        if self.name == "get_raw_image" and isinstance(data, dict) and "text" in data:
+            return ToolResponse.success(text=data["text"], data=data)
+
         text = data.get("sensitive_warning") if isinstance(data, dict) else None
         if not text:
             text = json.dumps(data, ensure_ascii=False)
@@ -151,7 +171,7 @@ def build_exploration_prompt(profile: dict[str, Any]) -> str:
     )
 
 
-def build_agent(profile_path: str | Path) -> tuple[ReActAgent, MCPServerBridge]:
+def build_agent(profile_path: str | Path) -> tuple[ReActAgent, MCPServerBridge, LogBroadcaster]:
     profile = load_profile(profile_path)
 
     bridge = MCPServerBridge(
@@ -165,17 +185,33 @@ def build_agent(profile_path: str | Path) -> tuple[ReActAgent, MCPServerBridge]:
     for spec in bridge.tools:
         registry.register_tool(MCPTool(bridge, spec))
 
-    llm = HelloAgentsLLM()  # 建议选有基础视觉能力的模型，配合get_raw_image兜底
+    llm = HelloAgentsLLM()
     agent = ReActAgent(
         name=f"{profile['game_id']}-explorer",
         llm=llm,
         tool_registry=registry,
         max_steps=profile.get("max_steps", DEFAULT_MAX_STEPS),
     )
-    return agent, bridge
+
+    dashboard_cfg = profile.get("dashboard", {}) or {}
+    broadcaster = LogBroadcaster(
+        host=dashboard_cfg.get("host", DEFAULT_DASHBOARD_HOST),
+        port=dashboard_cfg.get("port", DEFAULT_DASHBOARD_PORT),
+    )
+    broadcaster.start()
+    if agent.trace_logger is not None:
+        attach_broadcaster(agent.trace_logger, broadcaster)
+
+    return agent, bridge, broadcaster
 
 
 def main() -> None:
+    # Windows控制台默认GBK编码，hello_agents等依赖会print emoji/特殊字符，
+    # 不reconfigure的话会在打印时直接UnicodeEncodeError崩掉整个进程。
+    if sys.platform == "win32":
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
     from dotenv import load_dotenv
 
     load_dotenv(PROJECT_ROOT / ".env")
@@ -186,11 +222,13 @@ def main() -> None:
 
     profile_path = sys.argv[1]
     profile = load_profile(profile_path)
-    agent, bridge = build_agent(profile_path)
+    agent, bridge, broadcaster = build_agent(profile_path)
+    print(f"📡 实时日志面板: {broadcaster.url}")
     try:
         agent.run(build_exploration_prompt(profile))
     finally:
         bridge.close()
+        broadcaster.stop()
 
 
 if __name__ == "__main__":
