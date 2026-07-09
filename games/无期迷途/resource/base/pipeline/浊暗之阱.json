@@ -1,0 +1,156 @@
+{
+    "浊暗之阱": {
+        "recognition": "OCR",
+        "expected": "禁",
+        "roi": [
+            1018,
+            422,
+            34,
+            40
+        ],
+        "action": "DoNothing",
+        "next": [
+            "内海入口",
+            "[JumpBack]狄斯",
+            "[JumpBack]危机管理2",
+            "[JumpBack]危机管理",
+            "[JumpBack]主菜单"
+        ],
+        "on_error": [
+            "浊暗之阱回主页"
+        ],
+        "timeout": 5000
+    },
+    "浊暗之阱回主页": {
+        "next": [
+            "内海入口",
+            "[JumpBack]狄斯",
+            "[JumpBack]危机管理2",
+            "[JumpBack]危机管理",
+            "[JumpBack]主菜单"
+        ]
+    },
+    "内海入口": {
+        "recognition": "OCR",
+        "expected": "内海",
+        "roi": [
+            116,
+            557,
+            1074,
+            149
+        ],
+        "post_delay": 1000,
+        "next": [
+            "[JumpBack]内海右箭头",
+            "浊暗之阱入口"
+        ],
+        "action": "Click"
+    },
+    "内海右箭头": {
+        "recognition": "ColorMatch",
+        "upper": [
+            255,
+            209,
+            24
+        ],
+        "lower": [
+            255,
+            209,
+            24
+        ],
+        "roi": [
+            1168,
+            313,
+            107,
+            122
+        ],
+        "action": "Click",
+        "target": [
+            1223,
+            369,
+            1,
+            1
+        ],
+        "post_delay": 3000
+    },
+    "浊暗之阱入口": {
+        "recognition": "OCR",
+        "expected": "暗之阱",
+        "action": "Click",
+        "focus": {
+            "Node.Action.Succeeded": "进入浊暗之阱"
+        },
+        "post_delay": 1000,
+        "next": [
+            "乐园",
+            "[JumpBack]切换"
+        ]
+    },
+    "切换": {
+        "recognition": "TemplateMatch",
+        "template": "浊暗之阱.png",
+        "roi": [
+            468,
+            553,
+            354,
+            161
+        ],
+        "action": "Click"
+    },
+    "乐园": {
+        "recognition": "OCR",
+        "expected": "乐园幻境",
+        "roi": [
+            983,
+            414,
+            271,
+            190
+        ],
+        "action": "Click",
+        "target": [
+            1063,
+            493,
+            1,
+            1
+        ],
+        "post_delay": 1000,
+        "next": [
+            "浊暗之阱扫荡"
+        ]
+    },
+    "浊暗之阱扫荡": {
+        "recognition": "OCR",
+        "expected": "扫荡",
+        "roi": [
+            624,
+            483,
+            290,
+            203
+        ],
+        "action": "Click",
+        "post_delay": 2000,
+        "next": [
+            "[JumpBack]关闭界面",
+            "[JumpBack]关闭禁闭者选择界面",
+            "主菜单"
+        ]
+    },
+    "关闭禁闭者选择界面": {
+        "recognition": "OCR",
+        "expected": "禁闭者",
+        "roi": [
+            387,
+            122,
+            176,
+            74
+        ],
+        "action": "Click",
+        "target": [
+            53,
+            302,
+            1,
+            1
+        ],
+        "post_delay": 2000
+    }
+}

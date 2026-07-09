@@ -1,0 +1,5 @@
+# 本游戏专属敏感词补充，会和core/safety_guard.py里的GLOBAL_SENSITIVE_KEYWORDS合并
+extra:
+  - 首充
+  - 月卡
+  - 礼包码兑换

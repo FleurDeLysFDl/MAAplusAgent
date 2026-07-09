@@ -1,0 +1,25 @@
+# 新游戏接入模板：复制这份改名为profile.yaml，按需填写
+
+game_id: your_game_id                 # 唯一标识，建议全小写英文
+display_name: 你的游戏中文名
+package_name: com.example.yourgame
+resolution: [1280, 720]
+language: zh_cn
+ocr_model: zh_cn
+
+adb:
+  address: 127.0.0.1:5555
+  # adb_path: ""                      # 留空则自动探测
+
+# resource_path支持传列表，会依次叠加加载。OCR模型是通用资源，不用跟着游戏资源包重复拷贝，
+# 建议放进assets/ocr_models/<language>/（没有就照games/无期迷途的样子建一份），
+# 这里只放游戏专属的pipeline+image：
+resource_path:
+  - games/你的游戏/resource       # 没有现成MaaFramework资源包就整个字段留空字符串""
+  - assets/ocr_models/zh_cn      # 换语言就换成对应的assets/ocr_models/<language>目录
+interface_path: games/你的游戏/interface.json
+sensitive_keywords_path: games/你的游戏/sensitive_keywords.yaml
+
+exploration_goal_hint: >
+  简单描述游戏类型和界面特点，用于注入探索Prompt模板，
+  帮助LLM判断该优先关注哪些方向。

@@ -1,0 +1,27 @@
+# 无期迷途 profile
+# core/目录下的代码不应该因为这个文件的内容而修改，这是校验"游戏无关"抽象是否到位的标准。
+
+game_id: wuqimitu
+display_name: 无期迷途
+package_name: com.dragon.mituos
+resolution: [1280, 720]
+language: zh_cn
+ocr_model: zh_cn                      # 对应 games/无期迷途/resource/base/model/ocr
+
+adb:
+  address: 127.0.0.1:5555
+  # adb_path: ""                      # 留空则用maa.toolkit.Toolkit.find_adb_devices()自动探测
+
+# resource_path支持传列表，post_bundle会依次叠加加载：
+#   - games/无期迷途/resource/base：官服专属的pipeline+image，来自 https://github.com/quietlysnow/MBCCtools
+#     （B服/国际服资源未clone，如需要可以从MBCCtools仓库补，加进这个列表）
+#   - assets/ocr_models/zh_cn：通用的PaddleOCR中文模型，和游戏无关，所有zh_cn的游戏共用一份，不随游戏重复拷贝
+resource_path:
+  - games/无期迷途/resource/base
+  - assets/ocr_models/zh_cn
+interface_path: games/无期迷途/interface.json
+sensitive_keywords_path: games/无期迷途/sensitive_keywords.yaml
+
+exploration_goal_hint: >
+  策略养成类手游，主要界面包括城建、派遣、探索地图。
+  探索时优先关注新出现的建筑/功能入口。
