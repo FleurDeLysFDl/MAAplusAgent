@@ -127,6 +127,23 @@ def build_server(profile_path: str) -> FastMCP:
             image_cache.pop(next(iter(image_cache)))
         return ref
 
+    def _save_node_image(node_id: str, image: Any) -> None:
+        """把这个节点第一次出现时的截图存到nodes/<node_id>.png，跟节点的json文件放一起
+
+        节点json里只有OCR token集合，人工回看探索记录时完全看不出这个节点长什么样；
+        只在文件不存在时才写，同一节点后续再访问不重复编码/落盘（is_novel=False的
+        重复访问远多于第一次，没必要每次都重新截一份一样的图占IO）。图片编码失败
+        不影响整个screenshot()调用——这只是辅助调试用的存档，不是Agent决策要用的
+        数据（Agent看图走的是image_ref/get_raw_image那条路）。
+        """
+        path = memory.nodes_dir / f"{node_id}.png"
+        if path.exists():
+            return
+        ok, buf = cv2.imencode(".png", image)
+        if ok:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(buf.tobytes())
+
     mcp = FastMCP(f"maa-mcp-{game_id}")
 
     def _box_to_list(box: Any) -> list[int]:
@@ -157,6 +174,7 @@ def build_server(profile_path: str) -> FastMCP:
 
         sensitive_hits = safety_guard.register_screenshot(ocr_texts)
         node_id, visited_count, is_novel = memory.visit([t["text"] for t in ocr_texts])
+        _save_node_image(node_id, image)
 
         image_ref = _store_image(image)
         state["last_image_ref"] = image_ref

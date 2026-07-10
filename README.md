@@ -48,6 +48,8 @@ python -m venv .venv
 HelloAgents的`ReActAgent`，然后开始自由探索。探索记忆按game_id分目录存在
 `exploration_logs/<game_id>/nodes/`下，一个界面节点一个json文件，记录了这个界面的OCR特征、
 以及探索时在这个界面上验证过坐标的操作（点了哪里、导向了哪个节点），重复运行不会互相污染。
+每个节点第一次出现时的截图也存在同一目录下（`<node_id>.png`），想知道某个节点长什么样
+直接打开对应图片看就行，不用只靠OCR文字猜。
 
 再次遇到已经探索过的界面（`screenshot()`返回`known_actions`非空）时，LLM会优先调用
 `replay_action`直接重放缓存坐标，不用重新截图分析或看图定位。如果在`.env`里配置了
