@@ -115,6 +115,8 @@ def _patched_run_impl(self: ReActAgent, input_text: str, session_start_time, **k
     current_step = 0
     total_tokens = 0
     use_routine = False  # 一开始什么都没探索过，没有known_actions可用，从多模态起步
+    novel_count = 0  # 本次会话里screenshot()返回is_novel=True的次数，配合min_new_nodes拦截过早Finish
+    sensitive_warning_seen = False  # 命中过sensitive_warning就永久放行Finish/直接回复，min_new_nodes让位给安全护栏
 
     if self.trace_logger:
         self.trace_logger.log_event("message_written", {"role": "user", "content": input_text})
@@ -172,6 +174,25 @@ def _patched_run_impl(self: ReActAgent, input_text: str, session_start_time, **k
         tool_calls = response_message.tool_calls
         if not tool_calls:
             final_answer = response_message.content or "抱歉，我无法回答这个问题。"
+            min_new_nodes = getattr(self, "min_new_nodes", 0)
+            if novel_count < min_new_nodes and not sensitive_warning_seen:
+                # 模型不调用Finish工具、直接给一段文字了事，是min_new_nodes拦截Finish
+                # 工具调用之外的另一条"提前收尾"逃生门，得堵上同一套判断，否则模型发现
+                # Finish被拦之后改成直接回复就能绕过去（实测发生过）。这里没有tool_call_id
+                # 可挂，所以补一条assistant+user消息把这段回复和纠正塞回messages，而不是
+                # 像Finish分支那样往tool角色消息里塞
+                print(f"🚧 拦截直接收尾：本次已发现{novel_count}个新节点，目标{min_new_nodes}个，继续探索")
+                messages.append({"role": "assistant", "content": response_message.content})
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            f"还不能结束：本次探索目前只发现了{novel_count}个新界面，目标是至少"
+                            f"{min_new_nodes}个，请继续调用工具探索，不要用文字直接回复结束"
+                        ),
+                    }
+                )
+                continue
             print(f"💬 直接回复: {final_answer}")
             self.add_message(Message(input_text, "user"))
             self.add_message(Message(final_answer, "assistant"))
@@ -244,6 +265,40 @@ def _patched_run_impl(self: ReActAgent, input_text: str, session_start_time, **k
                         step=current_step,
                     )
 
+                min_new_nodes = getattr(self, "min_new_nodes", 0)
+                if (
+                    tool_name == "Finish"
+                    and result.get("finished")
+                    and novel_count < min_new_nodes
+                    and not sensitive_warning_seen
+                ):
+                    # min_new_nodes只在自由探索模式下由build_agent()设置（指令执行模式没有
+                    # 这个属性，getattr拿到默认0，不受影响）。没达标就不让Finish真正生效——
+                    # 只在Prompt里"建议"探索够了再停，实测模型会在发现个位数新界面后就主动喊停
+                    # （见README/开发记录），Prompt软约束管不住，只能跟safety_guard一样在这里
+                    # 硬拦：不返回final_answer，而是把"还没到目标"塞回tool消息，逼它继续下一步。
+                    # max_steps仍然是最终兜底，min_new_nodes定得再大也不会真的死循环。
+                    #
+                    # sensitive_warning_seen是安全出口：AGENT_OPERATING_RULES第3条要求命中
+                    # 敏感界面后立刻调用Finish收尾，这条规则的优先级必须高于"探索得够不够"——
+                    # 之前一版没加这个判断，实测LLM被拦住Finish之后在敏感界面上死循环了几十步，
+                    # 甚至开始editorialize"这可能不是真的敏感内容"来说服自己继续，还在这个过程
+                    # 中用describe_node写了张冠李戴的错误描述污染数据。命中过一次敏感警告，
+                    # 这次会话里就不再受min_new_nodes约束。
+                    print(f"🚧 拦截Finish：本次已发现{novel_count}个新节点，目标{min_new_nodes}个，继续探索")
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call_id,
+                            "content": (
+                                f"⚠️ 现在还不能结束：本次探索目前只发现了{novel_count}个新界面"
+                                f"（is_novel），目标是至少{min_new_nodes}个，请继续探索，不要重复"
+                                "调用Finish"
+                            ),
+                        }
+                    )
+                    continue
+
                 if tool_name == "Finish" and result.get("finished"):
                     final_answer = result["final_answer"]
                     print(f"🎉 最终答案: {final_answer}")
@@ -291,7 +346,12 @@ def _patched_run_impl(self: ReActAgent, input_text: str, session_start_time, **k
                     )
                     if tool_name == SCREENSHOT_TOOL_NAME and not result.startswith("❌"):
                         try:
-                            use_routine = bool(json.loads(result).get("known_actions"))
+                            screenshot_data = json.loads(result)
+                            use_routine = bool(screenshot_data.get("known_actions"))
+                            if screenshot_data.get("is_novel"):
+                                novel_count += 1
+                            if screenshot_data.get("sensitive_warning"):
+                                sensitive_warning_seen = True
                         except (json.JSONDecodeError, AttributeError):
                             use_routine = False
 

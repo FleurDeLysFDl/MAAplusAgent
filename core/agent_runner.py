@@ -71,7 +71,7 @@ EXPLORATION_PROMPT_TEMPLATE = """
 游戏特点：{exploration_goal_hint}
 
 你的目标：尽量发现你还没见过的界面和功能。
-
+{min_new_nodes_rule}
 操作规则：
 {operating_rules}
 
@@ -209,9 +209,20 @@ def load_profile(profile_path: str | Path) -> dict[str, Any]:
 
 
 def build_exploration_prompt(profile: dict[str, Any]) -> str:
+    min_new_nodes = profile.get("min_new_nodes", 0)
+    # 光靠Prompt里说"尽量发现"管不住模型——实测发现个位数新界面后就会主动调Finish喊停。
+    # min_new_nodes>0时这里只是提前把硬性目标亮出来，真正的强制力在
+    # react_agent_vision.py._patched_run_impl里拦Finish工具调用那部分
+    min_new_nodes_rule = (
+        f"本次探索目标：至少发现{min_new_nodes}个新界面（不是重复访问到的）才能结束，"
+        "不要找到几个新界面就急着调用Finish收尾。\n"
+        if min_new_nodes > 0
+        else ""
+    )
     return EXPLORATION_PROMPT_TEMPLATE.format(
         display_name=profile["display_name"],
         exploration_goal_hint=profile["exploration_goal_hint"].strip(),
+        min_new_nodes_rule=min_new_nodes_rule,
         operating_rules=AGENT_OPERATING_RULES,
         max_steps=profile.get("max_steps", DEFAULT_MAX_STEPS),
     )
@@ -271,6 +282,10 @@ def build_agent(
         if (enable_known_actions and routine_model_id)
         else None
     )
+
+    # 只在自由探索模式下生效——指令执行模式（enable_known_actions=True）完成指令
+    # 就该立刻Finish，不该被"至少发现N个新界面"这条规则拖着继续摸索
+    agent.min_new_nodes = 0 if enable_known_actions else profile.get("min_new_nodes", 0)
 
     dashboard_cfg = profile.get("dashboard", {}) or {}
     broadcaster = LogBroadcaster(

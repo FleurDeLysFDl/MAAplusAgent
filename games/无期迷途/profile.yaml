@@ -3,7 +3,7 @@
 
 game_id: wuqimitu
 display_name: 无期迷途
-package_name: com.dragon.mituos
+package_name: com.zy.wqmt.cn          # 官服真实包名，之前写的com.dragon.mituos是错的/过时的
 resolution: [1280, 720]
 language: zh_cn
 ocr_model: zh_cn                      # 对应 games/无期迷途/resource/base/model/ocr
@@ -27,6 +27,12 @@ exploration_goal_hint: >
   探索时优先关注新出现的建筑/功能入口。
 
 max_steps: 300
+
+# 之前几轮实测LLM发现个位数新界面（is_novel=True）就会主动调用Finish收尾，探索图
+# 一直很碎（见exploration_logs/wuqimitu，12个连通分量）。这里定一个硬指标：本次至少
+# 发现30个新节点才允许Finish真正生效，不够就被core/react_agent_vision.py拦回去继续走，
+# max_steps=300还是最终兜底，不会真死循环
+min_new_nodes: 30
 
 # 可选：不写就用默认的127.0.0.1:8765
 # dashboard:

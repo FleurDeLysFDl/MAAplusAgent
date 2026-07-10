@@ -28,6 +28,7 @@ from maa.toolkit import Toolkit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from exploration_memory import ExplorationMemory  # noqa: E402
+from image_similarity import images_look_same  # noqa: E402
 from safety_guard import (  # noqa: E402
     SafetyGuard,
     load_click_forbidden_keywords,
@@ -144,6 +145,18 @@ def build_server(profile_path: str) -> FastMCP:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(buf.tobytes())
 
+    # OCR文字相似度落在灰色地带（exploration_memory.ExplorationMemory.
+    # SIMILARITY_GRAY_ZONE~SIMILARITY_THRESHOLD之间）时，交给images_look_same
+    # 拿像素差异打破僵局（阈值定义见core/image_similarity.py）
+    def _images_look_same(node_id: str, image: Any) -> bool:
+        path = memory.nodes_dir / f"{node_id}.png"
+        if not path.exists():
+            return False  # 候选节点没存过图，没法比，保守起见当不同节点处理
+        candidate = cv2.imread(str(path))
+        if candidate is None:
+            return False
+        return images_look_same(candidate, image)
+
     mcp = FastMCP(f"maa-mcp-{game_id}")
 
     def _box_to_list(box: Any) -> list[int]:
@@ -173,7 +186,10 @@ def build_server(profile_path: str) -> FastMCP:
                         )
 
         sensitive_hits = safety_guard.register_screenshot(ocr_texts)
-        node_id, visited_count, is_novel = memory.visit([t["text"] for t in ocr_texts])
+        node_id, visited_count, is_novel = memory.visit(
+            [t["text"] for t in ocr_texts],
+            tiebreak=lambda candidate_id: _images_look_same(candidate_id, image),
+        )
         _save_node_image(node_id, image)
 
         image_ref = _store_image(image)
@@ -194,11 +210,13 @@ def build_server(profile_path: str) -> FastMCP:
             {"type": a["type"], "coords": a["coords"], "trigger_text": a.get("trigger_text")}
             for a in memory.get_ineffective_actions(node_id)
         ]
+        description = memory.nodes.get(node_id, {}).get("description", "")
         result: dict[str, Any] = {
             "ocr_texts": ocr_texts,
             "image_ref": image_ref,
             "is_novel": is_novel,
             "visited_count": visited_count,
+            "description": description,
             "known_actions": known_actions,
             "known_ineffective": known_ineffective,
         }
@@ -211,6 +229,12 @@ def build_server(profile_path: str) -> FastMCP:
             result["known_ineffective_hint"] = (
                 "known_ineffective里的操作之前试过对这个界面没有效果（点了/按了界面没变），"
                 "不要再重复尝试，换别的方式（比如跳过press_back直接用get_raw_image看图找退出方式）"
+            )
+        if is_novel:
+            result["describe_hint"] = (
+                "这是一个新界面，建议调用describe_node(description)简要描述一下这个界面是"
+                "干什么的（一两句话即可，比如'兑换中心主界面，可以用材料兑换限定道具'），"
+                "方便以后不用重新看图就知道这个节点的用途"
             )
         if sensitive_hits:
             result["sensitive_warning"] = (
@@ -287,6 +311,18 @@ def build_server(profile_path: str) -> FastMCP:
         if state["current_node_id"] is not None:
             memory.record_action(state["current_node_id"], "press_back", None)
         return "pressed_back"
+
+    @mcp.tool()
+    def describe_node(description: str) -> str:
+        """给当前界面（最近一次screenshot()对应的节点）补一句简短描述，比如"兑换中心
+        主界面，可以用材料兑换限定道具"。遇到新界面（screenshot()返回is_novel=true）时
+        建议调用，方便以后不用重新看图就知道这个节点是干什么的
+        """
+        node_id = state["current_node_id"]
+        if node_id is None:
+            raise ValueError("尚未截图，无法记录描述，请先调用screenshot()")
+        memory.set_description(node_id, description)
+        return "described"
 
     @mcp.tool()
     def replay_action(index: int) -> dict:
