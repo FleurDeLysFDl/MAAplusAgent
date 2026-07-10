@@ -17,6 +17,16 @@ python -m venv .venv
 如果本机装了多个adb，建议在profile里显式填`adb.adb_path`，否则会用
 `maa.toolkit.Toolkit.find_adb_devices()`自动探测。
 
+如果用雷电模拟器，可以在`.env`里填`LDCONSOLE_PATH`（`ldconsole.exe`的路径）和
+`LDPLAYER_INDEX`，`agent_runner.py`启动时会自动检查模拟器有没有在跑、没跑就拉起，
+等adb连上、系统开机完成才继续，不用每次手动开模拟器再跑代码；不填这两个变量就
+维持原样，自己管理模拟器/用真机。也可以单独跑这一步（比如只是想把模拟器开起来，
+不马上跑agent）：
+
+```
+./.venv/Scripts/python core/emulator.py games/无期迷途/profile.yaml
+```
+
 ## 单独测试MAA-MCP-Server
 
 不经过LLM，先验证MaaFramework这一层能不能跑通：

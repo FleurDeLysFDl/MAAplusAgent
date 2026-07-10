@@ -28,6 +28,7 @@ from hello_agents.tools.errors import ToolErrorCode
 from hello_agents.tools.response import ToolResponse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from emulator import ensure_emulator_ready  # noqa: E402
 from log_broadcaster import LogBroadcaster, attach_broadcaster  # noqa: E402
 from react_agent_vision import install_vision_support  # noqa: E402
 
@@ -302,6 +303,7 @@ def main() -> None:
     profile_path = sys.argv[1]
     instruction = sys.argv[2] if len(sys.argv) > 2 else None
     profile = load_profile(profile_path)
+    ensure_emulator_ready(profile)
     agent, bridge, broadcaster = build_agent(profile_path, enable_known_actions=bool(instruction))
     print(f"📡 实时日志面板: {broadcaster.url}")
     prompt = build_instruction_prompt(profile, instruction) if instruction else build_exploration_prompt(profile)
