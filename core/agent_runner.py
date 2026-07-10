@@ -22,7 +22,9 @@ from mcp.types import TextContent
 from mcp.types import Tool as McpToolSpec
 
 from hello_agents import HelloAgentsLLM, ReActAgent, ToolRegistry
+from hello_agents.skills import SkillLoader
 from hello_agents.tools.base import Tool, ToolParameter
+from hello_agents.tools.builtin.skill_tool import SkillTool
 from hello_agents.tools.circuit_breaker import CircuitBreaker
 from hello_agents.tools.errors import ToolErrorCode
 from hello_agents.tools.response import ToolResponse
@@ -263,6 +265,13 @@ def build_agent(
         if not enable_known_actions and spec.name == "replay_action":
             continue
         registry.register_tool(MCPTool(bridge, spec, enable_known_actions=enable_known_actions))
+
+    # skills/<name>/SKILL.md：游戏无关的领域知识（比如通用手游UI导航套路），
+    # 按需加载，不占system prompt的常驻token。探索/指令两种模式都注册——
+    # 跟known_actions那种"重复已知流程"的捷径不一样，这里存的是可迁移的通用
+    # 经验，不是某个具体节点的坐标，不会导致"探索目的被绕过"的问题
+    skill_loader = SkillLoader(skills_dir=PROJECT_ROOT / "skills")
+    registry.register_tool(SkillTool(skill_loader=skill_loader))
 
     llm = HelloAgentsLLM()
     agent = ReActAgent(
