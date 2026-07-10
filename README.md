@@ -35,8 +35,23 @@ python -m venv .venv
 ```
 
 `agent_runner.py`会自动拉起`maa_mcp_server.py`子进程（通过stdio），把它暴露的工具注册进
-HelloAgents的`ReActAgent`，然后开始自由探索。探索记忆存在`exploration_logs/<game_id>.json`里，
-按game_id分文件，重复运行不会互相污染。
+HelloAgents的`ReActAgent`，然后开始自由探索。探索记忆按game_id分目录存在
+`exploration_logs/<game_id>/nodes/`下，一个界面节点一个json文件，记录了这个界面的OCR特征、
+以及探索时在这个界面上验证过坐标的操作（点了哪里、导向了哪个节点），重复运行不会互相污染。
+
+再次遇到已经探索过的界面（`screenshot()`返回`known_actions`非空）时，LLM会优先调用
+`replay_action`直接重放缓存坐标，不用重新截图分析或看图定位。如果在`.env`里配置了
+`LLM_MODEL_ID_ROUTINE`，这一步还会自动切到那个更便宜的纯文本模型（这一步只需要从已知
+选项里选一个，不需要视觉能力）；探索没见过的新界面时始终用`LLM_MODEL_ID`那个多模态模型。
+
+## 下指令而不是自由探索
+
+```
+./.venv/Scripts/python core/agent_runner.py games/无期迷途/profile.yaml "帮我领取今日签到奖励"
+```
+
+带第三个参数就是执行用户指令，不带就是自由探索（默认行为不变）。两种模式复用同一套
+MCP工具/探索记忆/known_actions重放/双模型路由，只是prompt里的"目标"不一样。
 
 运行时终端会打印一个本地网页地址（默认`http://127.0.0.1:8765`），浏览器打开就能实时看到
 LLM调用/工具调用/敏感界面拦截等日志（`core/log_broadcaster.py`，给`ReActAgent`自带的

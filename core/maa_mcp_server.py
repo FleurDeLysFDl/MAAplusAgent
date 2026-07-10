@@ -104,8 +104,21 @@ def build_server(profile_path: str) -> FastMCP:
     memory = ExplorationMemory(game_id)
     image_cache: dict[str, Any] = {}
     # click_on_image只信任"最近一次screenshot()对应的原图"，防止LLM拿一张过期截图上
-    # 估算出的坐标去点当前画面（画面可能早就翻篇了）
-    state: dict[str, str | None] = {"last_image_ref": None}
+    # 估算出的坐标去点当前画面（画面可能早就翻篇了）；current_node_id/last_ocr_texts
+    # 是给探索记忆的操作记录用的，标记"最近一次screenshot()是哪个节点、看到了什么文字"
+    state: dict[str, Any] = {
+        "last_image_ref": None,
+        "current_node_id": None,
+        "last_ocr_texts": [],
+    }
+
+    def _trigger_text_at(x: int, y: int) -> str | None:
+        """点击坐标落在了哪个OCR候选框里，取它的文字记进操作图（纯尽力而为，找不到就None）"""
+        for item in state["last_ocr_texts"]:
+            bx, by, bw, bh = item["box"]
+            if bx <= x <= bx + bw and by <= y <= by + bh:
+                return item["text"]
+        return None
 
     def _store_image(image: Any) -> str:
         ref = uuid.uuid4().hex
@@ -143,16 +156,44 @@ def build_server(profile_path: str) -> FastMCP:
                         )
 
         sensitive_hits = safety_guard.register_screenshot(ocr_texts)
-        _, visited_count, is_novel = memory.visit([t["text"] for t in ocr_texts])
+        node_id, visited_count, is_novel = memory.visit([t["text"] for t in ocr_texts])
 
         image_ref = _store_image(image)
         state["last_image_ref"] = image_ref
+        state["current_node_id"] = node_id
+        state["last_ocr_texts"] = ocr_texts
+        known_actions = [
+            {
+                "index": i,
+                "type": a["type"],
+                "coords": a["coords"],
+                "trigger_text": a.get("trigger_text"),
+                "attempt_count": a.get("attempt_count", 0),
+            }
+            for i, a in enumerate(memory.get_actions(node_id))
+        ]
+        known_ineffective = [
+            {"type": a["type"], "coords": a["coords"], "trigger_text": a.get("trigger_text")}
+            for a in memory.get_ineffective_actions(node_id)
+        ]
         result: dict[str, Any] = {
             "ocr_texts": ocr_texts,
             "image_ref": image_ref,
             "is_novel": is_novel,
             "visited_count": visited_count,
+            "known_actions": known_actions,
+            "known_ineffective": known_ineffective,
         }
+        if known_actions:
+            result["known_actions_hint"] = (
+                "这个界面之前来过，known_actions里是已经验证过坐标的动作，"
+                "优先调用replay_action(index)直接执行，不需要重新截图分析或看图定位"
+            )
+        if known_ineffective:
+            result["known_ineffective_hint"] = (
+                "known_ineffective里的操作之前试过对这个界面没有效果（点了/按了界面没变），"
+                "不要再重复尝试，换别的方式（比如跳过press_back直接用get_raw_image看图找退出方式）"
+            )
         if sensitive_hits:
             result["sensitive_warning"] = (
                 f"检测到敏感界面，命中关键词: {sensitive_hits}。任务终止，不要在此界面执行任何操作。"
@@ -195,6 +236,8 @@ def build_server(profile_path: str) -> FastMCP:
             raise ValueError(f"坐标({x},{y})超出截图范围({width}x{height})")
         safety_guard.validate_click_on_image(x, y)
         controller.post_click(x, y).wait()
+        if state["current_node_id"] is not None:
+            memory.record_action(state["current_node_id"], "click_on_image", [x, y], used_vision=True)
         return "clicked"
 
     @mcp.tool()
@@ -202,6 +245,10 @@ def build_server(profile_path: str) -> FastMCP:
         """点击坐标，坐标必须落在最近一次screenshot()返回的OCR候选框范围内"""
         safety_guard.validate_click(x, y)
         controller.post_click(x, y).wait()
+        if state["current_node_id"] is not None:
+            memory.record_action(
+                state["current_node_id"], "click", [x, y], trigger_text=_trigger_text_at(x, y)
+            )
         return "clicked"
 
     @mcp.tool()
@@ -209,6 +256,8 @@ def build_server(profile_path: str) -> FastMCP:
         """滑动，起止坐标都必须落在最近一次screenshot()返回的OCR候选框范围内"""
         safety_guard.validate_swipe(x1, y1, x2, y2)
         controller.post_swipe(x1, y1, x2, y2, duration_ms).wait()
+        if state["current_node_id"] is not None:
+            memory.record_action(state["current_node_id"], "swipe", [x1, y1, x2, y2])
         return "swiped"
 
     ANDROID_KEYCODE_BACK = 4
@@ -217,7 +266,41 @@ def build_server(profile_path: str) -> FastMCP:
     def press_back() -> str:
         """发送安卓系统返回键，用于关闭弹窗/浮层/返回上一级界面，不需要猜坐标"""
         controller.post_click_key(ANDROID_KEYCODE_BACK).wait()
+        if state["current_node_id"] is not None:
+            memory.record_action(state["current_node_id"], "press_back", None)
         return "pressed_back"
+
+    @mcp.tool()
+    def replay_action(index: int) -> dict:
+        """直接重放当前界面上第index个已知动作（screenshot()返回的known_actions列表里的
+        index），坐标是之前探索时已经验证过的，不需要重新截图分析、不需要get_raw_image看图。
+        """
+        node_id = state["current_node_id"]
+        if node_id is None:
+            raise ValueError("尚未截图，无法重放动作，请先调用screenshot()")
+        actions = memory.get_actions(node_id)
+        if not (0 <= index < len(actions)):
+            raise ValueError(f"index超出范围，当前界面只有{len(actions)}个已知动作")
+
+        action = actions[index]
+        action_type = action["type"]
+        coords = action["coords"]
+        if action_type == "press_back":
+            controller.post_click_key(ANDROID_KEYCODE_BACK).wait()
+        elif action_type == "swipe":
+            safety_guard.validate_click_on_image(coords[0], coords[1])
+            safety_guard.validate_click_on_image(coords[2], coords[3])
+            controller.post_swipe(coords[0], coords[1], coords[2], coords[3], 300).wait()
+        else:  # click / click_on_image：坐标是历史验证过的，仍然过一遍禁止点击区域
+            safety_guard.validate_click_on_image(coords[0], coords[1])
+            controller.post_click(coords[0], coords[1]).wait()
+
+        memory.record_action(
+            node_id, action_type, coords,
+            trigger_text=action.get("trigger_text"),
+            used_vision=action.get("used_vision", False),
+        )
+        return {"replayed": action}
 
     @mcp.tool()
     def list_known_tasks() -> list[dict]:
