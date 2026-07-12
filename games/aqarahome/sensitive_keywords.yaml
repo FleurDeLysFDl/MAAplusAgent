@@ -1,0 +1,23 @@
+# aqarahome是真实的智能家居app，即使当前账号没绑真实设备，也按"这类app本身
+# 可能涉及真实硬件/账号安全"的原则补充额外的风险关键词，比mockgame/无期迷途
+# 更保守一些。
+
+# extra：整屏拦截，命中即终止探索（跟core/safety_guard.py的GLOBAL_SENSITIVE_KEYWORDS合并）
+extra:
+  - 注销账号
+  - 解绑账号
+
+# click_forbidden：不整屏拦截，只禁止点击命中这些关键词的OCR候选框
+click_forbidden: []
+
+# irreversible：跟core/risk_gate.py内置的删除/清空/重置等词并列合并，自由探索
+# 模式下命中这些词的候选点击会被跳过+记入待确认队列，不会真的执行——这几条是
+# 智能家居场景专属的补充（真实门锁/网关/家庭相关的不可逆操作）
+irreversible:
+  - 删除设备
+  - 解绑
+  - 恢复出厂设置
+  - 解锁
+  - 开锁
+  - 移除家庭
+  - 转移

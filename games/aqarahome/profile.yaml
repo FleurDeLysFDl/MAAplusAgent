@@ -1,0 +1,30 @@
+# aqarahome profile：真实第三方智能家居app（Aqara Home），不是自己写的测试app，
+# 用来验证探索框架对"真实、非游戏类"app的适应性。当前账号没有绑定任何真实设备
+# （截图确认过是空的"添加设备"首页），探索期间不会有真实门锁/摄像头等硬件被
+# 误触的风险；仍然按标准流程开自由探索模式的风控（RiskGate场景A），账号/设置
+# 类的高危操作命中会被跳过、记入待确认队列，不会真的执行。
+
+game_id: aqarahome
+display_name: Aqara Home
+package_name: com.lumiunited.aqarahome
+resolution: [1280, 720]
+language: zh_cn
+ocr_model: zh_cn
+
+adb:
+  address: 127.0.0.1:5555
+
+# 没有游戏专属的MaaFramework pipeline/image资源包，只需要OCR模型这一份通用资源
+resource_path: assets/ocr_models/zh_cn
+interface_path: games/aqarahome/interface.json
+sensitive_keywords_path: games/aqarahome/sensitive_keywords.yaml
+
+exploration_goal_hint: >
+  真实的智能家居管理app（不是游戏），当前账号没有绑定任何真实设备。主要功能
+  入口在底部导航栏（首页/设备/智能/探索/我的）。优先看各个导航tab下有什么
+  子界面，不要尝试真的"添加设备"（会尝试搜索附近的真实蓝牙/WiFi硬件，没有
+  意义也可能长时间卡住），不要修改账号安全相关设置。
+
+max_steps: 40
+
+min_new_nodes: 8
