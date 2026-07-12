@@ -6,6 +6,10 @@ __pycache__/
 exploration_logs/
 memory/
 
+# 内部设计/需求文档，不进版本库
+/通用手游Agent开发文档.md
+/软件探索Agent三大功能模块设计.md
+
 # mock_game_app（Android测试app）：本地构建产物/机器相关配置，不进版本库
 mock_game_app/local.properties
 mock_game_app/.gradle/
