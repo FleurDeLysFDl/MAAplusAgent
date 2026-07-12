@@ -121,9 +121,12 @@ def rank_ocr_candidates_by_relevance(
     return [item for item, _score in scored]
 
 
-def route_intent(intent: str, game_id: str) -> dict[str, Any]:
+def route_intent(intent: str, game_id: str, *, storage_dir: str = "exploration_logs") -> dict[str, Any]:
     """execute_intent()的"定位"这一半：只判断该走哪条路、目标是谁，不负责真的
     执行（执行需要连真实设备，见core/execute_intent.py）。
+
+    storage_dir默认"exploration_logs"（真实数据的位置），测试时传tmp_path
+    隔离，不碰真实数据。
 
     返回三种之一：
       {"action": "run_known_task", "skill": LearnedSkill}
@@ -131,12 +134,12 @@ def route_intent(intent: str, game_id: str) -> dict[str, Any]:
       {"action": "goal_directed_probe"}  # 模块1.2，还没实现，调用方目前应该报告
                                           # "做不到"而不是真的去probe
     """
-    store = SkillStore(game_id)
+    store = SkillStore(game_id, storage_dir=storage_dir)
     skill = match_known_task(intent, store)
     if skill is not None:
         return {"action": "run_known_task", "skill": skill}
 
-    memory = ExplorationMemory(game_id)
+    memory = ExplorationMemory(game_id, storage_dir=storage_dir)
     candidates = semantic_search_states(intent, memory)
     if candidates:
         node_id, score = candidates[0]
