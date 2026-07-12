@@ -26,21 +26,71 @@ from __future__ import annotations
 
 import json
 import re
+from collections import deque
 from pathlib import Path
 from typing import Any, Callable
 
 
+def _is_stable_text(text: str) -> bool:
+    """过滤掉纯数字/纯符号/过短的噪声文字，只留有辨识度的文字标签"""
+    text = text.strip()
+    return len(text) >= 2 and not re.fullmatch(r"[\d\W_]+", text)
+
+
 def _stable_tokens(ocr_texts: list[str]) -> set[str]:
-    """过滤掉纯数字/纯符号/过短的噪声token，只保留有辨识度的文字标签"""
-    tokens: set[str] = set()
-    for text in ocr_texts:
-        text = text.strip()
-        if len(text) < 2:
-            continue
-        if re.fullmatch(r"[\d\W_]+", text):
-            continue
-        tokens.add(text)
-    return tokens
+    return {t.strip() for t in ocr_texts if _is_stable_text(t)}
+
+
+def _stable_items(ocr_items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """跟_stable_tokens同一套过滤规则，但连box位置一起保留——布局相似度比对
+    （见_layout_similarity）要用到位置，只有文字集合不够用"""
+    return [
+        {"text": item["text"].strip(), "box": item["box"]}
+        for item in ocr_items
+        if _is_stable_text(item["text"])
+    ]
+
+
+def _box_center(box: list[int]) -> tuple[float, float]:
+    x, y, w, h = box
+    return x + w / 2, y + h / 2
+
+
+def _boxes_match(a: list[int], b: list[int], *, center_tolerance: float = 40) -> bool:
+    """两个框算不算"布局上同一个位置"：中心点距离够近，且宽高比例不要差太远
+
+    只看位置和大致尺寸，完全不看框里的文字——这正是模板复用要的效果：同一个
+    列表模板换了不同条目内容、同一个角色详情页换了不同角色，位置/尺寸大体不变，
+    文字必然不同。容差是像素绝对值，跟具体分辨率有关，profile.yaml里各游戏
+    分辨率不一致时可能需要跟着调，暂时先用一个通用值。
+    """
+    ax, ay = _box_center(a)
+    bx, by = _box_center(b)
+    if ((ax - bx) ** 2 + (ay - by) ** 2) ** 0.5 > center_tolerance:
+        return False
+    aw, ah = max(a[2], 1), max(a[3], 1)
+    bw, bh = max(b[2], 1), max(b[3], 1)
+    return 0.5 <= aw / bw <= 2.0 and 0.5 <= ah / bh <= 2.0
+
+
+def _layout_similarity(boxes_a: list[list[int]], boxes_b: list[list[int]]) -> float:
+    """改良版Jaccard，跟_similarity同一个贪心两两配对的思路，只是把"文字相不相等"
+    换成"位置尺寸像不像"（_boxes_match）。用来近似判断两个节点是不是共享同一套
+    UI模板，跟_similarity（判断是不是同一屏）是两件独立的事：模板相似度可以很高，
+    同时文字相似度很低（内容完全不同），反之亦然。
+    """
+    if not boxes_a or not boxes_b:
+        return 0.0
+    remaining_b = list(boxes_b)
+    matched = 0
+    for a in boxes_a:
+        for i, b in enumerate(remaining_b):
+            if _boxes_match(a, b):
+                remaining_b.pop(i)
+                matched += 1
+                break
+    union = len(boxes_a) + len(boxes_b) - matched
+    return matched / union if union else 0.0
 
 
 def _tokens_equivalent(x: str, y: str) -> bool:
@@ -85,7 +135,21 @@ class ExplorationMemory:
     # 0.583，比0.6差一点点）。这个区间交给visit()的tiebreak回调（通常是调用方拿
     # 图片diff）做最终确认，不传tiebreak就还是老行为：只要没到SIMILARITY_THRESHOLD
     # 一律当新节点
-    SIMILARITY_GRAY_ZONE = 0.45
+    #
+    # 下限先后调过0.45/0.3/0：改到0那次是为了兜住装饰性英文/花体字banner拖低
+    # 文字分数的真实案例（wuqimitu-145/146，实测分数0.344），但去掉下限直接
+    # 引入了新的误合并——mock_game_app测试app里，主城（图标墙）和任务列表
+    # （文字列表）纯文字相似度只有0.167（"任务"⊂"每日任务"、"公告"⊂"查看
+    # 今日公告"这两个巧合子串撑起来的），却被images_look_same判成了同一屏：
+    # 两屏都是大片空白背景+少量内容，像素diff比例只有2.9%，远低于
+    # image_similarity.DIFF_MAX_RATIO(0.35)。这暴露了纯像素diff对"内容稀疏
+    # 的界面"天生分辨力不足——背景占比一高，随便两个不同界面都可能长得很像。
+    #
+    # 下限定在0.25：0.344（该兜的真实重复）在这条线以上，0.167（该拦的误合并）
+    # 在这条线以下，两个真实案例正好被这一刀分开。文字相似度极低时说明OCR几乎
+    # 认不出任何共同的稳定内容，这时更应该相信"大概率是不同界面"，而不是把
+    # 决定权交给对稀疏布局不敏感的像素diff
+    SIMILARITY_GRAY_ZONE = 0.25
 
     def __init__(self, game_id: str, storage_dir: str = "exploration_logs"):
         self.game_id = game_id
@@ -119,6 +183,8 @@ class ExplorationMemory:
                     node = json.load(f)
                 node.setdefault("actions", [])
                 node.setdefault("description", "")
+                node.setdefault("exhausted", False)
+                node.setdefault("box_signature", [])
                 nodes[node["id"]] = node
 
         # 兼容旧版单文件格式（exploration_logs/<game_id>.json，一个list），
@@ -145,6 +211,7 @@ class ExplorationMemory:
                             continue
                         sig.setdefault("actions", [])
                         sig.setdefault("description", "")
+                        sig.setdefault("box_signature", [])
                         nodes[sig["id"]] = sig
                         self._save_node(sig)
             except (json.JSONDecodeError, KeyError):
@@ -186,13 +253,45 @@ class ExplorationMemory:
             raise KeyError(f"未知节点: {node_id_a if a is None else node_id_b}")
         return _similarity(set(a["tokens"]), set(b["tokens"]))
 
+    def similar_nodes(
+        self, node_id: str, *, min_score: float = 0.5, top_k: int = 3
+    ) -> list[tuple[str, float]]:
+        """模板复用：找视觉布局（不看文字内容）跟node_id相似的其它节点
+
+        跟_match()/similarity_between()判断"是不是同一屏"是两件独立的事——那边
+        比的是文字集合，这里比的是OCR框的位置/尺寸（_layout_similarity），目的
+        是揪出"同一套UI模板、换了不同内容"的节点（比如列表的不同条目、角色详情页
+        换了不同角色）：这类节点文字相似度可能很低（内容完全不同、不会被判成
+        同一个节点），但布局相似度很高，已经在其中一个节点上验证过的按钮坐标，
+        大概率在同模板的其它节点上也能点到差不多的位置，可以当参考提示给Agent，
+        省得每换一个内容实例都从头拿视觉摸索一遍坐标。
+
+        返回按相似度降序的[(node_id, score), ...]，不含自己，最多top_k个。
+        """
+        target = self.nodes.get(node_id)
+        if target is None or not target.get("box_signature"):
+            return []
+        scored = []
+        for other_id, other in self.nodes.items():
+            if other_id == node_id or not other.get("box_signature"):
+                continue
+            score = _layout_similarity(target["box_signature"], other["box_signature"])
+            if score >= min_score:
+                scored.append((other_id, score))
+        scored.sort(key=lambda pair: pair[1], reverse=True)
+        return scored[:top_k]
+
     def visit(
         self,
-        ocr_texts: list[str],
+        ocr_items: list[dict[str, Any]],
         *,
         tiebreak: Callable[[str], bool] | None = None,
     ) -> tuple[str, int, bool]:
         """记录一次界面访问，顺带把上一次record_action()挂起的操作落盘
+
+        ocr_items: 当前截图的OCR结果，每项{"text": str, "box": [x,y,w,h]}——
+        不只是文字，box位置也要存下来（存进节点的box_signature字段），给
+        similar_nodes()的布局相似度比对用。
 
         tiebreak: 可选回调，只在文字相似度落在[SIMILARITY_GRAY_ZONE,
         SIMILARITY_THRESHOLD)这个"像但判断不了"的区间时才会被调用，参数是候选
@@ -205,7 +304,9 @@ class ExplorationMemory:
         Returns:
             (节点id, 累计访问次数, 是否是本次会话首次见到)
         """
-        tokens = _stable_tokens(ocr_texts)
+        stable_items = _stable_items(ocr_items)
+        tokens = {item["text"] for item in stable_items}
+        box_signature = [item["box"] for item in stable_items]
         matched = self._match(tokens)
         if matched is None and tiebreak is not None:
             candidate, score = self._best_candidate(tokens)
@@ -215,11 +316,20 @@ class ExplorationMemory:
         if matched is not None:
             matched["count"] += 1
             matched["tokens"] = sorted(tokens)  # 跟着界面缓慢漂移，避免签名过时
+            matched["box_signature"] = box_signature
             node_id, count, is_novel = matched["id"], matched["count"], False
         else:
             node_id = f"{self.game_id}-{self._next_index}"
             self._next_index += 1
-            matched = {"id": node_id, "tokens": sorted(tokens), "count": 1, "actions": [], "description": ""}
+            matched = {
+                "id": node_id,
+                "tokens": sorted(tokens),
+                "count": 1,
+                "actions": [],
+                "description": "",
+                "exhausted": False,
+                "box_signature": box_signature,
+            }
             self.nodes[node_id] = matched
             count, is_novel = 1, True
 
@@ -373,6 +483,178 @@ class ExplorationMemory:
         (self.nodes_dir / f"{remove_id}.json").unlink(missing_ok=True)
         del self.nodes[remove_id]
         self._save_node(keep)
+
+    def cleanup(self) -> dict[str, int]:
+        """整理已落盘的节点/操作数据，处理探索过程中可能积累的两类一致性问题：
+
+        1. 悬空边：action.leads_to指向一个已经不存在的节点id（比如node.json被
+           手动删除、或者merge_nodes()覆盖不到的历史遗留问题）。这类action已经
+           没有意义的目标，直接删除——留着的话，nearest_frontier_path()之类的
+           图算法会读到一条查无此节点的边，白白浪费比对
+        2. 重复动作：同一个节点上出现(type, coords)完全相同的action条目不止
+           一条（正常走record_action()->_resolve_pending()会自动合并，理论上
+           不该出现，但历史数据/手工编辑可能留下这种重复）。保留第一条，
+           attempt_count相加、effective取或，其余删除
+
+        只处理数据内部一致性问题，不删除/合并节点本身——孤立节点可能是还没找到
+        路径进去的真实界面，删不删需要人工判断（见visualize_graph.py的isolated
+        标记），跟merge_nodes()/dedupe_nodes.py处理的"这两个节点该不该算同一个"
+        是不同的问题，这个方法不碰。
+
+        Returns:
+            {"dangling_edges_removed": 删除的悬空边数, "duplicate_actions_merged": 合并掉的重复动作数}
+        """
+        dangling_removed = 0
+        duplicates_merged = 0
+        for node in self.nodes.values():
+            original_count = len(node.get("actions", []))
+            kept: list[dict[str, Any]] = []
+            seen: dict[tuple[str, str], dict[str, Any]] = {}
+            for action in node.get("actions", []):
+                leads_to = action.get("leads_to")
+                if leads_to is not None and leads_to not in self.nodes:
+                    dangling_removed += 1
+                    continue
+                key = (action["type"], json.dumps(action.get("coords")))
+                existing = seen.get(key)
+                if existing is not None:
+                    existing["attempt_count"] = existing.get("attempt_count", 1) + action.get(
+                        "attempt_count", 1
+                    )
+                    existing["effective"] = existing.get("effective", False) or action.get(
+                        "effective", False
+                    )
+                    duplicates_merged += 1
+                    continue
+                seen[key] = action
+                kept.append(action)
+            if len(kept) != original_count:
+                node["actions"] = kept
+                self._save_node(node)
+        return {
+            "dangling_edges_removed": dangling_removed,
+            "duplicate_actions_merged": duplicates_merged,
+        }
+
+    def isolated_nodes(self) -> list[str]:
+        """找出既无入边也无出边的节点——可能是OCR噪声偶然被判成新节点的垃圾数据，
+        也可能是还没找到路径进去的真实存在的界面（比如探索时用get_raw_image/
+        click_on_image直接跳过去、没有留下可重放的普通click记录），删不删需要
+        人工判断，这个方法只负责找出来，不负责删（跟visualize_graph.py的isolated
+        标记是同一个概念，删除动作见delete_node）。
+        """
+        incoming = {nid: 0 for nid in self.nodes}
+        for node_id in self.nodes:
+            for action in self.get_actions(node_id):
+                target = action.get("leads_to")
+                if target in incoming:
+                    incoming[target] += 1
+        return [
+            nid for nid in self.nodes
+            if incoming.get(nid, 0) == 0 and len(self.get_actions(nid)) == 0
+        ]
+
+    def delete_node(self, node_id: str) -> None:
+        """删除一个节点及其截图文件。调用方（比如cleanup_graph.py --delete-isolated）
+        负责判断这个节点是不是真的该删，这个方法本身不做判断、只负责执行。不检查
+        是否有其它节点的action.leads_to指向它——那样会产生悬空边，留给cleanup()
+        下次运行时清理，不在这里现场处理（避免这个方法職责过重）。
+        """
+        if node_id not in self.nodes:
+            raise KeyError(f"未知节点: {node_id}")
+        (self.nodes_dir / f"{node_id}.png").unlink(missing_ok=True)
+        (self.nodes_dir / f"{node_id}.json").unlink(missing_ok=True)
+        del self.nodes[node_id]
+
+    def untried_tokens(self, node_id: str) -> set[str]:
+        """这个节点上，OCR文字里还没被任何点击类操作覆盖过的部分——粗略代表"看得见
+        但还没试过的候选目标"。只统计click/click_on_image留下的trigger_text：
+        swipe/press_back没有关联的文字，没法用这种方式判断"是否还有新意"，这类
+        操作值不值得再试，仍然只能靠Agent自己判断，不在这个方法的能力范围内。
+
+        这是个近似：trigger_text之外的稳定token也可能只是装饰性文字/标题，不一定
+        真的可点。误判的代价很小——调用方（比如BFS导航）把Agent带到这种"假前沿"
+        节点后，Agent自己一看画面就知道没什么可点的，正常继续摸索，不会卡死。
+        """
+        node = self.nodes.get(node_id)
+        if node is None:
+            return set()
+        tried = {a["trigger_text"] for a in node["actions"] if a.get("trigger_text")}
+        return {
+            token for token in node["tokens"]
+            if not any(_tokens_equivalent(token, t) for t in tried)
+        }
+
+    def has_frontier(self, node_id: str) -> bool:
+        """这个节点上是否还有没试过的候选目标
+
+        优先看exhausted标记（见mark_exhausted）：很多OCR文字是标题/公告/资源计数
+        这类永远不会被点的装饰内容，untried_tokens只能近似猜、猜不准就会导致这个
+        节点永远"看起来还有前沿"、BFS自动导航永远绕不开它。Agent自己看画面确认过
+        "真的没什么可点了"之后调用mark_node_exhausted()，比继续猜token准，这里
+        直接采信、不再看untried_tokens。
+        """
+        node = self.nodes.get(node_id)
+        if node is not None and node.get("exhausted"):
+            return False
+        return bool(self.untried_tokens(node_id))
+
+    def mark_exhausted(self, node_id: str) -> None:
+        """人工确认（通常是Agent自己看画面判断）这个节点已经没有值得尝试的候选
+        目标了，覆盖untried_tokens的启发式猜测。标记之后has_frontier()对这个
+        节点恒为False，BFS自动导航会正常把它当"已摸透"跳过。
+        """
+        node = self.nodes.get(node_id)
+        if node is None:
+            raise KeyError(f"未知节点: {node_id}")
+        node["exhausted"] = True
+        self._save_node(node)
+
+    def _bfs_path(self, from_node_id: str, goal: Callable[[str], bool]) -> list[str] | None:
+        """在已知的"有效边"(action.leads_to且effective)构成的图上做BFS，找到从
+        from_node_id出发最近的一个满足goal(node_id)的节点，返回路径（不含起点、
+        含终点，按经过顺序排列）。找不到（比如压根没有已知边可走、或可达范围内
+        没有满足goal的节点）返回None。nearest_frontier_path/path_to共用这同一套
+        搜索，区别只是goal条件不同。
+        """
+        if from_node_id not in self.nodes:
+            return None
+        visited = {from_node_id}
+        queue: deque[tuple[str, list[str]]] = deque([(from_node_id, [])])
+        while queue:
+            node_id, path = queue.popleft()
+            for action in self.get_actions(node_id):
+                target = action.get("leads_to")
+                if target is None or target in visited or target not in self.nodes:
+                    continue
+                new_path = path + [target]
+                if goal(target):
+                    return new_path
+                visited.add(target)
+                queue.append((target, new_path))
+        return None
+
+    def nearest_frontier_path(self, from_node_id: str) -> list[str] | None:
+        """从from_node_id出发，最近的一个有未试候选(has_frontier)的节点的路径。
+
+        起点自己是否有frontier不在这里判断——调用方应该先查
+        has_frontier(from_node_id)，起点本身就有的话不需要导航。这个方法只负责
+        "在已知连通性里找最短路"，不负责"值不值得走这条路"之类的判断，那些
+        决策留给调用方。
+        """
+        return self._bfs_path(from_node_id, self.has_frontier)
+
+    def path_to(self, from_node_id: str, to_node_id: str) -> list[str] | None:
+        """从from_node_id出发到指定to_node_id的最短已知路径（不含起点、含终点）。
+        找不到（比如根本没有已知边可达）返回None；起点等于终点返回空列表。
+
+        给core/navigate_demo.py这类"导航到某个具体已知节点"的场景用——跟
+        nearest_frontier_path目标不一样（那个是"随便找个还没摸完的"，这个是
+        "必须是这一个"），共用同一套_bfs_path搜索。
+        """
+        if from_node_id == to_node_id:
+            return []
+        return self._bfs_path(from_node_id, lambda node_id: node_id == to_node_id)
 
     def set_description(self, node_id: str, description: str) -> None:
         """给节点补一句人话描述，比如"兑换中心主界面，可以用材料兑换限定道具"

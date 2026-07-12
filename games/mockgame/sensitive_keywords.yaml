@@ -1,0 +1,7 @@
+# mockgame没有专属的额外敏感词/禁点关键词——公告页里那条"关于打击违规充值和
+# 不诚信退款的公告"就是故意用来测试core/safety_guard.py的GLOBAL_SENSITIVE_KEYWORDS
+# 命中"充值"产生误报、以及skills/mobile-game-ui-nav.md里"照章停止但如实说明可能
+# 是误报"这条经验的，不需要额外补充
+extra: []
+click_forbidden: []
+irreversible: []

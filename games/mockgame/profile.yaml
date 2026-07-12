@@ -1,0 +1,31 @@
+# mockgame profile：mock_game_app/（自己写的测试用安卓app）的接入配置。
+# 内容跟真实游戏无关，纯粹用清晰/稳定的中文UI验证探索/OCR/节点匹配/BFS导航这套
+# 流程本身对不对——见mock_game_app/README.md
+
+game_id: mockgame
+display_name: 测试游戏
+package_name: com.maaplus.mockgame
+resolution: [1280, 720]
+language: zh_cn
+ocr_model: zh_cn
+
+adb:
+  address: 127.0.0.1:5555
+  # adb_path: ""                      # 留空则用maa.toolkit.Toolkit.find_adb_devices()自动探测
+
+# 没有游戏专属的MaaFramework pipeline/image资源包（这个测试app没有run_known_task
+# 要用的确定性任务），只需要OCR模型这一份通用资源
+resource_path: assets/ocr_models/zh_cn
+interface_path: games/mockgame/interface.json
+sensitive_keywords_path: games/mockgame/sensitive_keywords.yaml
+
+exploration_goal_hint: >
+  内容干净、可预期的测试用安卓app（不是真实游戏），模拟常见二次元/养成类手游的
+  UI模式：主城图标墙、公告tab+列表+详情、角色详情多级tab、兑换列表、任务进度、
+  编队多选，外加登录弹窗诱导跳转、纯图标按钮、敏感词误报这几个交互坑点。
+  优先把主城的每个图标入口都点开看看。
+
+max_steps: 60
+
+# 界面数量不多（个位数到十几个），不需要很高的硬性目标
+min_new_nodes: 8

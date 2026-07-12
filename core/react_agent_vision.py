@@ -13,14 +13,20 @@ hello_agents没有给这个场景留任何干净的扩展点（messages列表是
 ReActAgent._run_impl。core/agent_runner.py只用同步的agent.run()，不涉及
 arun()/arun_stream()，所以只需要patch这一个方法。
 
-在原方法的基础上改了三处（其余逻辑原样照抄自hello_agents 1.0.0的
+在原方法的基础上改了四处（其余逻辑原样照抄自hello_agents 1.0.0的
 react_agent.py，库版本升级后需要重新对比同步一遍）：
 1. 工具结果来自get_raw_image时，不把base64塞进tool消息，而是塞一条占位文本
    满足OpenAI"每个tool_call_id必须有对应tool角色回复"的要求，紧跟着追加一条
    真正的user角色多模态消息（image_url内容块），模型才能看懂图。
 2. 每次调用LLM前清理旧的带图消息，只保留最近MAX_KEPT_IMAGES条的图片内容，
    更早的替换成占位文字，避免连续多次get_raw_image调用后再次把上下文撑爆。
-3. 双模型路由：screenshot()返回的known_actions非空，说明当前界面之前来过、
+3. 文字版长短期记忆：图片淘汰后文字部分（尤其是screenshot()返回的ocr_texts，
+   一屏能有几十条文本框）还是会随步数无限堆积——实测300步任务里第30步左右
+   单次LLM调用就已经因为.env的LLM_TIMEOUT=60秒超时而被腰斩。这里比照图片淘汰
+   的思路加一层：只保留最近SHORT_TERM_STEPS步的完整文字（短期记忆），更早的
+   assistant推理内容和tool的screenshot结果压缩成摘要（长期记忆），跨会话的
+   探索图谱记忆见core/exploration_memory.py，这里只管单次会话内的上下文体积。
+4. 双模型路由：screenshot()返回的known_actions非空，说明当前界面之前来过、
    探索记忆里已经存了验证过坐标的操作（core/exploration_memory.py），不需要
    看图也不需要重新摸索坐标，下一步LLM调用就切到agent.routine_llm（便宜的纯
    文本模型，如果没配就还是用self.llm）；命中get_raw_image、或者又出现了
@@ -40,7 +46,14 @@ from hello_agents.core.message import Message
 
 IMAGE_TOOL_NAME = "get_raw_image"
 SCREENSHOT_TOOL_NAME = "screenshot"
-MAX_KEPT_IMAGES = 2
+MAX_KEPT_IMAGES = 1
+
+# 文字版长短期记忆窗口：最近这么多步的assistant推理/tool结果保持原样（短期记忆），
+# 更早的压缩成摘要（长期记忆）。8步足够模型看清最近的操作因果，早于这个窗口的细节
+# 对当前决策帮助有限，压缩掉换取上下文体积
+SHORT_TERM_STEPS = 8
+MAX_ASSISTANT_CONTENT_CHARS = 200
+MAX_TOOL_RESULT_CHARS = 400
 
 
 def _is_image_message(message: dict[str, Any]) -> bool:
@@ -61,6 +74,48 @@ def _evict_old_images(messages: list[dict[str, Any]]) -> None:
         text_blocks = [b for b in message["content"] if b.get("type") == "text"]
         text_blocks.append({"type": "text", "text": "[早前的截图原图已从上下文移除以节省token]"})
         message["content"] = text_blocks
+
+
+def _compact_tool_result(content: str) -> str:
+    """长期记忆压缩：screenshot()的ocr_texts是大头（一屏几十条文本框），优先砍它，
+    保留is_novel/description等语义信息；不是screenshot结果（比如click的"clicked"、
+    错误信息）就直接截断"""
+    if len(content) <= MAX_TOOL_RESULT_CHARS:
+        return content
+    try:
+        data = json.loads(content)
+    except (json.JSONDecodeError, TypeError):
+        return content[:MAX_TOOL_RESULT_CHARS] + f"...[已截断，原长{len(content)}字符]"
+    if isinstance(data, dict) and "ocr_texts" in data:
+        compact = {k: v for k, v in data.items() if k != "ocr_texts"}
+        compact["ocr_texts"] = f"[已省略{len(data['ocr_texts'])}条OCR文本，早前步骤，节省上下文]"
+        return json.dumps(compact, ensure_ascii=False)
+    return content[:MAX_TOOL_RESULT_CHARS] + f"...[已截断，原长{len(content)}字符]"
+
+
+def _compact_assistant_content(content: Any) -> Any:
+    """长期记忆压缩：早前步骤的推理过程往往有好几段文字，只保留开头帮助追溯思路"""
+    if not isinstance(content, str) or len(content) <= MAX_ASSISTANT_CONTENT_CHARS:
+        return content
+    return content[:MAX_ASSISTANT_CONTENT_CHARS] + "...[早前推理已压缩]"
+
+
+def _compress_stale_text(
+    messages: list[dict[str, Any]], step_starts: list[int], current_step: int
+) -> None:
+    """只保留最近SHORT_TERM_STEPS步的完整文字，更早的assistant/tool文字消息压缩摘要"""
+    cutoff_step = current_step - SHORT_TERM_STEPS
+    if cutoff_step < 1:
+        return
+    cutoff_index = step_starts[cutoff_step]
+    for message in messages[:cutoff_index]:
+        role = message.get("role")
+        if role == "assistant":
+            message["content"] = _compact_assistant_content(message.get("content"))
+        elif role == "tool":
+            content = message.get("content")
+            if isinstance(content, str):
+                message["content"] = _compact_tool_result(content)
 
 
 def _strip_images(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -113,6 +168,7 @@ def _patched_run_impl(self: ReActAgent, input_text: str, session_start_time, **k
     tool_schemas = self._build_tool_schemas()
 
     current_step = 0
+    step_starts: list[int] = []  # step_starts[i] = 第i+1步开始时messages的长度，配合_compress_stale_text定位早前步骤的消息范围
     total_tokens = 0
     use_routine = False  # 一开始什么都没探索过，没有known_actions可用，从多模态起步
     novel_count = 0  # 本次会话里screenshot()返回is_novel=True的次数，配合min_new_nodes拦截过早Finish
@@ -125,10 +181,12 @@ def _patched_run_impl(self: ReActAgent, input_text: str, session_start_time, **k
 
     while current_step < self.max_steps:
         current_step += 1
+        step_starts.append(len(messages))
         print(f"\n--- 第 {current_step} 步 ---")
         self._current_step = current_step
 
         _evict_old_images(messages)
+        _compress_stale_text(messages, step_starts, current_step)
 
         routine_llm = getattr(self, "routine_llm", None)
         active_llm = routine_llm if (use_routine and routine_llm is not None) else self.llm

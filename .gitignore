@@ -4,3 +4,11 @@ __pycache__/
 .env
 exploration_logs/
 memory/
+
+# mock_game_app（Android测试app）：本地构建产物/机器相关配置，不进版本库
+mock_game_app/local.properties
+mock_game_app/.gradle/
+mock_game_app/build/
+mock_game_app/app/build/
+mock_game_app/**/*.iml
+mock_game_app/.idea/

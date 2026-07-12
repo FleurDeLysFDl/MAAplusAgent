@@ -8,3 +8,7 @@ extra:
 # 其余界面正常探索。用于"追踪"这种消耗资源的功能入口——允许Agent看见，但不许点。
 click_forbidden:
   - 追踪
+
+# irreversible：跟core/risk_gate.py内置的删除/清空/重置等词并列合并，自由探索
+# 模式下命中这些词的候选点击会被跳过+记入待确认队列，不会真的执行
+irreversible: []
