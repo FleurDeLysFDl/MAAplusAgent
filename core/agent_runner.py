@@ -34,6 +34,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from emulator import ensure_emulator_ready  # noqa: E402
 from log_broadcaster import LogBroadcaster, attach_broadcaster  # noqa: E402
 from react_agent_vision import install_vision_support  # noqa: E402
+from usage_log import record_usage  # noqa: E402
 
 install_vision_support()
 
@@ -383,8 +384,14 @@ def main() -> None:
     agent, bridge, broadcaster = build_agent(profile_path, is_exploration=not instruction)
     print(f"📡 实时日志面板: {broadcaster.url}")
     prompt = build_instruction_prompt(profile, instruction) if instruction else build_exploration_prompt(profile)
+    game_id = profile["game_id"]
+    mode = "instruction" if instruction else "explore"
     try:
-        agent.run(prompt)
+        final_answer = agent.run(prompt)
+        record_usage(game_id, mode, instruction, final_answer)
+    except Exception as e:
+        record_usage(game_id, mode, instruction, f"error: {e}")
+        raise
     finally:
         bridge.close()
         broadcaster.stop()

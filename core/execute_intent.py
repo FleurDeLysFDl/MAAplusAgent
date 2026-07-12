@@ -56,6 +56,7 @@ from review_pending import _navigate_to  # noqa: E402
 from risk_gate import RiskGate, load_irreversible_keywords  # noqa: E402
 from safety_guard import load_sensitive_keywords  # noqa: E402
 from skill_store import LearnedSkill, SkillStore  # noqa: E402
+from usage_log import record_usage  # noqa: E402
 
 
 def _consolidate_navigate_skill(
@@ -176,15 +177,24 @@ def main() -> None:
     if decision["action"] == "goal_directed_probe":
         print("🔍 已知技能库和状态图里都没有找到匹配目标，进入目标导向探测（模块1.2）")
         _probe_one_step(memory, tasker, controller, safety_guard, risk_gate, intent)
+        record_usage(game_id, "intent_execute", intent, "probed_one_step", extra={"route": "goal_directed_probe"})
         return
 
     if decision["action"] == "run_known_task":
         skill = decision["skill"]
         print(f"📖 命中已知技能「{skill.name}」（已成功{skill.success_count}次），重放其操作序列")
         if not _replay_skill(controller, safety_guard, risk_gate, skill):
+            record_usage(
+                game_id, "intent_execute", intent, "rejected_by_user",
+                extra={"route": "run_known_task", "skill": skill.name},
+            )
             return
         SkillStore(game_id).record_success(skill.name, intent)
         print("✅ 技能重放完成")
+        record_usage(
+            game_id, "intent_execute", intent, "success",
+            extra={"route": "run_known_task", "skill": skill.name},
+        )
         return
 
     node_id, score = decision["node_id"], decision["score"]
@@ -197,8 +207,16 @@ def main() -> None:
     landed = _navigate_to(memory, tasker, controller, safety_guard, node_id)
     if landed is None:
         print("❌ 没能导航到目标节点")
+        record_usage(
+            game_id, "intent_execute", intent, "failed: no path",
+            extra={"route": "navigate_to_state", "node_id": node_id},
+        )
         sys.exit(1)
     print(f"✅ 已到达 {node_id}——意图执行的\"定位\"部分完成，到达后具体怎么完成意图仍需人工/后续LLM接管")
+    record_usage(
+        game_id, "intent_execute", intent, "success",
+        extra={"route": "navigate_to_state", "node_id": node_id},
+    )
 
     if path:
         _consolidate_navigate_skill(game_id, memory, current_id, path, intent)
