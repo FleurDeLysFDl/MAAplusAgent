@@ -7,6 +7,19 @@
 测试用安卓 app（`mock_game_app/`，见下文"测试"一节），专门用来在没有真实游戏 OCR
 噪声干扰的情况下验证探索流程本身对不对。
 
+## 效果预览
+
+下面两张图都来自`mock_game_app`（测试用安卓app，见"测试"一节）跑的一次自由探索：
+
+<p float="left">
+  <img src="docs/mockgame_hub.png" width="420" alt="mock_game_app主城界面" />
+  <img src="docs/exploration_graph.png" width="420" alt="探索图谱可视化" />
+</p>
+
+左边是`mock_game_app`的主城界面；右边是同一次探索生成的图谱（`core/visualize_graph.py`
+渲染成的本地网页），节点颜色深浅代表访问次数、红色是孤立节点，鼠标悬浮能看到每个
+节点的描述文字、点击节点会高亮它的邻居。
+
 ## 架构总览
 
 ```
