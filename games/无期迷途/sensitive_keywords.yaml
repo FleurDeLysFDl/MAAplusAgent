@@ -1,4 +1,4 @@
-# 本游戏专属敏感词补充，会和core/safety_guard.py里的GLOBAL_SENSITIVE_KEYWORDS合并
+# 本游戏专属敏感词补充，会和core/safety/safety_guard.py里的GLOBAL_SENSITIVE_KEYWORDS合并
 extra:
   - 首充
   - 月卡
@@ -9,6 +9,6 @@ extra:
 click_forbidden:
   - 追踪
 
-# irreversible：跟core/risk_gate.py内置的删除/清空/重置等词并列合并，自由探索
+# irreversible：跟core/safety/risk_gate.py内置的删除/清空/重置等词并列合并，自由探索
 # 模式下命中这些词的候选点击会被跳过+记入待确认队列，不会真的执行
 irreversible: []

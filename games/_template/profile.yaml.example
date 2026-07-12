@@ -25,7 +25,7 @@ exploration_goal_hint: >
   帮助LLM判断该优先关注哪些方向。
 
 # 可选：自由探索模式下，本次至少发现min_new_nodes个新界面(is_novel=True)才允许
-# LLM调用Finish收尾，不够就被core/react_agent_vision.py拦回去继续探索，max_steps
+# LLM调用Finish收尾，不够就被core/agent/react_agent_vision.py拦回去继续探索，max_steps
 # 仍是最终兜底。不写这个字段/写0就是原来的行为——LLM自己判断"探得差不多了"就会
 # 主动结束，实测容易发现个位数新界面就喊停，图会很碎
 # min_new_nodes: 30

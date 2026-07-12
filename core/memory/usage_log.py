@@ -1,6 +1,6 @@
 """使用记录：按game_id记一份"什么时候、以什么模式、输入了什么、结果如何"的历史。
 
-跟core/exploration_memory.py的定位不同——那边存的是"这个游戏长什么样"的状态图，
+跟core/memory/exploration_memory.py的定位不同——那边存的是"这个游戏长什么样"的状态图，
 这里存的是"我们怎么用这个Agent操作这个不同的app"的操作历史，两者都按game_id分
 文件（同一份exploration_logs/<game_id>/目录下），但内容和用途都不一样，不合并
 进同一份数据里，不同app（不同game_id）的使用记录天然互不干扰。
@@ -10,12 +10,12 @@
 需要反复改写/合并。
 
 三个记录点（见各自文件里的调用）：
-- core/agent_runner.py：自由探索/指令执行两种ReActAgent会话，跑完记一条
-- core/execute_intent.py：结构化意图执行（已知技能重放/状态导航/目标探测），
+- core/agent/agent_runner.py：自由探索/指令执行两种ReActAgent会话，跑完记一条
+- core/intent/execute_intent.py：结构化意图执行（已知技能重放/状态导航/目标探测），
   每种路径的成功/失败/被拒绝都各自记一条
 
 build_usage_context()是给以后"把使用历史喂给LLM当context"这个场景准备的——
-跟core/react_agent_vision.py那套长短期记忆压缩是同一个思路：最近的记录保留
+跟core/agent/react_agent_vision.py那套长短期记忆压缩是同一个思路：最近的记录保留
 完整细节（最近的因果关系需要看清楚），更早的压缩成聚合统计（按mode/结果类型
 分组计数，不逐条罗列），这样不管usage_log.jsonl积累了多少年历史，喂给LLM的
 这段文本大小始终有上限，不会跟着使用次数无限增长。目前没有任何调用方把这段
@@ -23,8 +23,8 @@ context真的塞进prompt（还没有需要"知道这个游戏之前怎么被用
 压缩逻辑准备好，等有这个需求时直接用。
 
 用法（离线查看某个游戏的使用历史）：
-    python core/usage_log.py <game_id>
-    python core/usage_log.py <game_id> --context   # 看压缩后、可以直接喂给LLM的版本
+    python core/memory/usage_log.py <game_id>
+    python core/memory/usage_log.py <game_id> --context   # 看压缩后、可以直接喂给LLM的版本
 """
 from __future__ import annotations
 
@@ -117,7 +117,7 @@ def build_usage_context(
 
     最近recent_n条保留完整细节（时间/模式/输入/结果），更早的全部记录只保留
     聚合统计（按mode分组次数、按结果类型分组次数、时间跨度）——跟
-    core/react_agent_vision.py的SHORT_TERM_STEPS是同一个"近详远略"思路，
+    core/agent/react_agent_vision.py的SHORT_TERM_STEPS是同一个"近详远略"思路，
     只是这里压缩的是使用历史，那边压缩的是单次会话内的对话消息。
     """
     entries = read_usage_log(game_id, storage_dir=storage_dir)
@@ -156,7 +156,7 @@ def main() -> None:
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
     if len(sys.argv) < 2:
-        print("用法: python usage_log.py <game_id>", file=sys.stderr)
+        print("用法: python core/memory/usage_log.py <game_id>", file=sys.stderr)
         sys.exit(1)
 
     game_id = sys.argv[1]

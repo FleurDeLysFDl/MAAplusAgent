@@ -30,22 +30,22 @@ from hello_agents.tools.circuit_breaker import CircuitBreaker
 from hello_agents.tools.errors import ToolErrorCode
 from hello_agents.tools.response import ToolResponse
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from emulator import ensure_emulator_ready  # noqa: E402
-from log_broadcaster import LogBroadcaster, attach_broadcaster  # noqa: E402
-from react_agent_vision import install_vision_support  # noqa: E402
-from usage_log import record_usage  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from core.device.emulator import ensure_emulator_ready  # noqa: E402
+from core.agent.log_broadcaster import LogBroadcaster, attach_broadcaster  # noqa: E402
+from core.agent.react_agent_vision import install_vision_support  # noqa: E402
+from core.memory.usage_log import record_usage  # noqa: E402
 
 install_vision_support()
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-MCP_SERVER_SCRIPT = Path(__file__).resolve().parent / "maa_mcp_server.py"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+MCP_SERVER_SCRIPT = PROJECT_ROOT / "core" / "device" / "maa_mcp_server.py"
 
 DEFAULT_MAX_STEPS = 30
 DEFAULT_DASHBOARD_HOST = "127.0.0.1"
 DEFAULT_DASHBOARD_PORT = 8765
 
-# core/idle_scheduler.py（软件探索Agent三大功能模块设计.md模块0.1）靠这个文件
+# core/agent/idle_scheduler.py（软件探索Agent三大功能模块设计.md模块0.1）靠这个文件
 # 的mtime判断"用户最近有没有发过指令"——用户带指令跑agent_runner.py就是最直接
 # 的"用户在场"信号，touch一下这个文件，调度器只读不写，不需要额外的IPC机制
 USER_ACTIVITY_MARKER = PROJECT_ROOT / "memory" / "last_user_activity.txt"
@@ -371,7 +371,7 @@ def main() -> None:
     load_dotenv(PROJECT_ROOT / ".env")
 
     if len(sys.argv) < 2:
-        print("用法: python agent_runner.py <profile.yaml路径> [用户指令]", file=sys.stderr)
+        print("用法: python core/agent/agent_runner.py <profile.yaml路径> [用户指令]", file=sys.stderr)
         print("      不传用户指令就是自由探索模式；传了就按指令执行，完成/做不到都会调Finish收尾", file=sys.stderr)
         sys.exit(1)
 

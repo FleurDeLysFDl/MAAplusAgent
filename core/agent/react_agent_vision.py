@@ -10,7 +10,7 @@ tokens（模型上限128000），几步之内就能把上下文打爆。
 
 hello_agents没有给这个场景留任何干净的扩展点（messages列表是_run_impl的局部
 变量，工具结果拼接逻辑内联在一个250行的私有方法里），所以这里monkeypatch
-ReActAgent._run_impl。core/agent_runner.py只用同步的agent.run()，不涉及
+ReActAgent._run_impl。core/agent/agent_runner.py只用同步的agent.run()，不涉及
 arun()/arun_stream()，所以只需要patch这一个方法。
 
 在原方法的基础上改了四处（其余逻辑原样照抄自hello_agents 1.0.0的
@@ -25,9 +25,9 @@ react_agent.py，库版本升级后需要重新对比同步一遍）：
    单次LLM调用就已经因为.env的LLM_TIMEOUT=60秒超时而被腰斩。这里比照图片淘汰
    的思路加一层：只保留最近SHORT_TERM_STEPS步的完整文字（短期记忆），更早的
    assistant推理内容和tool的screenshot结果压缩成摘要（长期记忆），跨会话的
-   探索图谱记忆见core/exploration_memory.py，这里只管单次会话内的上下文体积。
+   探索图谱记忆见core/memory/exploration_memory.py，这里只管单次会话内的上下文体积。
 4. 双模型路由：screenshot()返回的known_actions非空，说明当前界面之前来过、
-   探索记忆里已经存了验证过坐标的操作（core/exploration_memory.py），不需要
+   探索记忆里已经存了验证过坐标的操作（core/memory/exploration_memory.py），不需要
    看图也不需要重新摸索坐标，下一步LLM调用就切到agent.routine_llm（便宜的纯
    文本模型，如果没配就还是用self.llm）；命中get_raw_image、或者又出现了
    没见过的新界面，就切回self.llm（多模态探索模型）。切到routine_llm调用时，

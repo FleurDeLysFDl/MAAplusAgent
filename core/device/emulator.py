@@ -122,10 +122,10 @@ def main() -> None:
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
     if len(sys.argv) < 2:
-        print("用法: python emulator.py <profile.yaml路径>", file=sys.stderr)
+        print("用法: python core/device/emulator.py <profile.yaml路径>", file=sys.stderr)
         sys.exit(1)
 
-    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+    load_dotenv(Path(__file__).resolve().parents[2] / ".env")
     with open(sys.argv[1], "r", encoding="utf-8") as f:
         profile = yaml.safe_load(f)
     ensure_emulator_ready(profile)

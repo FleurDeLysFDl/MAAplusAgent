@@ -10,7 +10,7 @@ exploration_memory.py的相似度算法/灰色地带图片diff兜底这些是最
 状态会打架。
 
 用法：
-    python core/dedupe_nodes.py <game_id>
+    python core/tools/dedupe_nodes.py <game_id>
 """
 from __future__ import annotations
 
@@ -20,9 +20,9 @@ from typing import Any
 
 import cv2
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from exploration_memory import ExplorationMemory  # noqa: E402
-from image_similarity import images_look_same  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from core.memory.exploration_memory import ExplorationMemory  # noqa: E402
+from core.memory.image_similarity import images_look_same  # noqa: E402
 
 
 def _load_image(memory: ExplorationMemory, node_id: str) -> Any:
@@ -89,7 +89,7 @@ def main() -> None:
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
     if len(sys.argv) < 2:
-        print("用法: python dedupe_nodes.py <game_id>", file=sys.stderr)
+        print("用法: python core/tools/dedupe_nodes.py <game_id>", file=sys.stderr)
         sys.exit(1)
 
     merged, before = dedupe(sys.argv[1])

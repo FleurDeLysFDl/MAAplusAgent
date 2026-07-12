@@ -1,4 +1,4 @@
-"""core/exploration_memory.py的单元测试。
+"""core/memory/exploration_memory.py的单元测试。
 
 覆盖节点身份匹配（含灰色地带图片diff兜底）、操作图的挂起/落盘、BFS寻路、
 模板复用、清理工具这几块核心逻辑。用tmp_path隔离每个测试的存储目录，不碰
@@ -11,7 +11,7 @@
 """
 from __future__ import annotations
 
-from exploration_memory import (
+from core.memory.exploration_memory import (
     ExplorationMemory,
     _boxes_match,
     _is_stable_text,

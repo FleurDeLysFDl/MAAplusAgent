@@ -1,13 +1,13 @@
-"""把探索记忆（core/exploration_memory.py）落盘的节点+操作图渲染成一个可以拖拽/
+"""把探索记忆（core/memory/exploration_memory.py）落盘的节点+操作图渲染成一个可以拖拽/
 缩放/搜索的本地网页，人工review探索图谱质量时用（孤立节点、连通分量碎片化、
 误合并等问题肉眼很容易发现，比一个个翻json文件快得多）。
 
 只读，不修改exploration_logs下的任何数据。生成的HTML是完全自包含的（没有CDN
-依赖、没有外部脚本），跟core/log_broadcaster.py的仪表盘一个风格，双击就能在
+依赖、没有外部脚本），跟core/agent/log_broadcaster.py的仪表盘一个风格，双击就能在
 浏览器里打开，不需要起服务器。
 
 用法：
-    python core/visualize_graph.py <game_id> [输出路径]
+    python core/tools/visualize_graph.py <game_id> [输出路径]
     不给输出路径就默认存到 exploration_logs/<game_id>/graph.html
 """
 from __future__ import annotations
@@ -17,8 +17,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from exploration_memory import ExplorationMemory  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from core.memory.exploration_memory import ExplorationMemory  # noqa: E402
 
 
 def _build_graph_data(memory: ExplorationMemory) -> dict[str, Any]:
@@ -430,7 +430,7 @@ def main() -> None:
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
     if len(sys.argv) < 2:
-        print("用法: python visualize_graph.py <game_id> [输出路径]", file=sys.stderr)
+        print("用法: python core/tools/visualize_graph.py <game_id> [输出路径]", file=sys.stderr)
         sys.exit(1)
 
     game_id = sys.argv[1]

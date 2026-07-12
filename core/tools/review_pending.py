@@ -1,13 +1,13 @@
-"""场景A的收尾：人工审阅core/risk_gate.py积累的待确认队列，选择性放行执行。
+"""场景A的收尾：人工审阅core/safety/risk_gate.py积累的待确认队列，选择性放行执行。
 
 对应 软件探索Agent三大功能模块设计.md 模块2.2场景A最后一句"等用户下次上线，
-把待确认队列展示出来，用户可以选择性放行"。复用core/navigate_demo.py已经写好
+把待确认队列展示出来，用户可以选择性放行"。复用core/device/navigate_demo.py已经写好
 的截图/OCR/节点匹配/动作执行这几块——放行的候选如果当前不在记录时所在的那个
 节点上，先用ExplorationMemory.path_to()导航过去，再真的执行这次点击；执行完
 （或者用户决定丢弃不管）都要把这一条从队列里摘掉，不然下次审阅还会重复看到。
 
 用法：
-    python core/review_pending.py <profile.yaml路径>
+    python core/tools/review_pending.py <profile.yaml路径>
 交互：
     输入序号        放行执行这一条（自动导航到对应节点后再点）
     d<序号>         丢弃这一条，不执行
@@ -20,11 +20,11 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from exploration_memory import ExplorationMemory  # noqa: E402
-from maa_mcp_server import _load_profile  # noqa: E402
-from navigate_demo import _capture, _perform, _visit, connect_device  # noqa: E402
-from risk_gate import PendingConfirmationQueue  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from core.memory.exploration_memory import ExplorationMemory  # noqa: E402
+from core.device.maa_mcp_server import _load_profile  # noqa: E402
+from core.device.navigate_demo import _capture, _perform, _visit, connect_device  # noqa: E402
+from core.safety.risk_gate import PendingConfirmationQueue  # noqa: E402
 
 
 def _print_queue(items: list[dict]) -> None:
@@ -78,7 +78,7 @@ def main() -> None:
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
     if len(sys.argv) < 2:
-        print("用法: python review_pending.py <profile.yaml路径>", file=sys.stderr)
+        print("用法: python core/tools/review_pending.py <profile.yaml路径>", file=sys.stderr)
         sys.exit(1)
 
     profile = _load_profile(sys.argv[1])

@@ -1,7 +1,7 @@
 """MAA-MCP-Server：用mcp SDK (FastMCP) 包装MaaFramework能力，游戏无关。
 
 启动方式（约定从项目根目录运行，profile.yaml里的相对路径都相对于项目根目录）：
-    python core/maa_mcp_server.py games/无期迷途/profile.yaml
+    python core/device/maa_mcp_server.py games/无期迷途/profile.yaml
 
 分工原则：本进程不做任何"下一步该干什么"的决策，只负责"看"（截图/OCR）和"动"
 （点击/滑动），以及执行games/<game>/interface.json里声明好的确定性任务。
@@ -26,21 +26,21 @@ from maa.resource import Resource
 from maa.tasker import Tasker
 from maa.toolkit import Toolkit
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from exploration_memory import ExplorationMemory  # noqa: E402
-from image_similarity import images_look_same  # noqa: E402
-from risk_gate import (  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from core.memory.exploration_memory import ExplorationMemory  # noqa: E402
+from core.memory.image_similarity import images_look_same  # noqa: E402
+from core.safety.risk_gate import (  # noqa: E402
     PendingConfirmationQueue,
     RiskGate,
     load_irreversible_keywords,
 )
-from safety_guard import (  # noqa: E402
+from core.safety.safety_guard import (  # noqa: E402
     SafetyGuard,
     load_click_forbidden_keywords,
     load_sensitive_keywords,
 )
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 # MaaFramework默认会把Error级别日志直接打到stdout（还带ANSI颜色），
 # 但本进程的stdout被MCP用作JSONRPC over stdio的传输通道，两者混在一起会
@@ -162,7 +162,7 @@ def build_server(profile_path: str, *, auto_navigate: bool = False) -> FastMCP:
 
     # OCR文字相似度落在灰色地带（exploration_memory.ExplorationMemory.
     # SIMILARITY_GRAY_ZONE~SIMILARITY_THRESHOLD之间）时，交给images_look_same
-    # 拿像素差异打破僵局（阈值定义见core/image_similarity.py）
+    # 拿像素差异打破僵局（阈值定义见core/memory/image_similarity.py）
     def _images_look_same(node_id: str, image: Any) -> bool:
         path = memory.nodes_dir / f"{node_id}.png"
         if not path.exists():
@@ -441,7 +441,7 @@ def build_server(profile_path: str, *, auto_navigate: bool = False) -> FastMCP:
 
         自由探索模式下，如果这个坐标对应的OCR文字命中风险关键词（充值/支付这类
         敏感词，或删除/清空/重置这类不可逆语义），不会真的执行这次点击——跳过，
-        记入待确认队列，等用户之后自己审阅决定要不要补做，见core/risk_gate.py。
+        记入待确认队列，等用户之后自己审阅决定要不要补做，见core/safety/risk_gate.py。
         """
         safety_guard.validate_click(x, y)
         trigger_text = _trigger_text_at(x, y)
@@ -508,7 +508,7 @@ def build_server(profile_path: str, *, auto_navigate: bool = False) -> FastMCP:
     @mcp.tool()
     def list_pending_confirmations() -> list[dict]:
         """列出自由探索模式下被跳过的高危候选点击（命中敏感词/不可逆语义，见
-        core/risk_gate.py），每条记录了在哪个节点、点了什么文字、命中了哪个
+        core/safety/risk_gate.py），每条记录了在哪个节点、点了什么文字、命中了哪个
         关键词。这些点击当时没有真的执行，只是记了下来——用户可以照着这份
         清单自己判断要不要手动去补做，Agent本身不会主动replay这些动作。
         """
@@ -561,7 +561,7 @@ def build_server(profile_path: str, *, auto_navigate: bool = False) -> FastMCP:
 
 def main() -> None:
     if len(sys.argv) < 2:
-        print("用法: python maa_mcp_server.py <profile.yaml路径> [--auto-navigate]", file=sys.stderr)
+        print("用法: python core/device/maa_mcp_server.py <profile.yaml路径> [--auto-navigate]", file=sys.stderr)
         sys.exit(1)
 
     auto_navigate = "--auto-navigate" in sys.argv[2:]

@@ -1,7 +1,7 @@
-"""core/skill_store.py的单元测试：技能库的存取和持久化。"""
+"""core/memory/skill_store.py的单元测试：技能库的存取和持久化。"""
 from __future__ import annotations
 
-from skill_store import LearnedSkill, SkillStore
+from core.memory.skill_store import LearnedSkill, SkillStore
 
 
 class TestSkillStore:

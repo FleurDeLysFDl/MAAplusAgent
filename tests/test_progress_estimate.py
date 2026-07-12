@@ -1,4 +1,4 @@
-"""core/progress_estimate.py的单元测试：frontier_progress读图数据，
+"""core/memory/progress_estimate.py的单元测试：frontier_progress读图数据，
 discovery_rate读trace日志，两个指标要能反映真实情况（尤其是"卡住"和"探完"
 这两种容易混淆的场景）。
 """
@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import json
 
-from exploration_memory import ExplorationMemory
-from progress_estimate import discovery_rate, estimate_progress, frontier_progress
+from core.memory.exploration_memory import ExplorationMemory
+from core.memory.progress_estimate import discovery_rate, estimate_progress, frontier_progress
 
 
 def ocr_item(text: str, box: list[int]) -> dict:

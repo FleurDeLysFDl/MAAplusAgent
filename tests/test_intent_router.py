@@ -1,4 +1,4 @@
-"""core/intent_router.py的单元测试。
+"""core/intent/intent_router.py的单元测试。
 
 重点覆盖字符2-gram相似度这个替代真LLM语义判断的启发式——包括它在
 2026-07-12实机调试时暴露过的"短意图 vs 长描述"不对称问题（用overlap
@@ -6,8 +6,8 @@ coefficient而不是Jaccard修复的）。
 """
 from __future__ import annotations
 
-from exploration_memory import ExplorationMemory
-from intent_router import (
+from core.memory.exploration_memory import ExplorationMemory
+from core.intent.intent_router import (
     _char_bigrams,
     _text_similarity,
     match_known_task,
@@ -15,7 +15,7 @@ from intent_router import (
     route_intent,
     semantic_search_states,
 )
-from skill_store import LearnedSkill, SkillStore
+from core.memory.skill_store import LearnedSkill, SkillStore
 
 
 class TestCharBigrams:

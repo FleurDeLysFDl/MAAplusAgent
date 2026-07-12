@@ -1,4 +1,4 @@
-"""core/image_similarity.py的单元测试：像素diff判同一屏。
+"""core/memory/image_similarity.py的单元测试：像素diff判同一屏。
 
 回归用例覆盖2026-07-12实测发现的那个真实局限——内容稀疏、背景大片空白的
 两个不同界面，像素diff比例可能很低，容易被误判成同一屏（这也是后来把
@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from image_similarity import DIFF_MAX_RATIO, images_look_same
+from core.memory.image_similarity import DIFF_MAX_RATIO, images_look_same
 
 
 def solid_image(shape=(100, 100, 3), color=(255, 255, 255)) -> np.ndarray:

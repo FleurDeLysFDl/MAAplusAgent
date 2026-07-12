@@ -13,15 +13,15 @@
 状态会打架。
 
 用法：
-    python core/cleanup_graph.py <game_id> [--delete-isolated]
+    python core/tools/cleanup_graph.py <game_id> [--delete-isolated]
 """
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from exploration_memory import ExplorationMemory  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from core.memory.exploration_memory import ExplorationMemory  # noqa: E402
 
 
 def main() -> None:
@@ -30,7 +30,7 @@ def main() -> None:
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
     if len(sys.argv) < 2:
-        print("用法: python cleanup_graph.py <game_id> [--delete-isolated]", file=sys.stderr)
+        print("用法: python core/tools/cleanup_graph.py <game_id> [--delete-isolated]", file=sys.stderr)
         sys.exit(1)
 
     game_id = sys.argv[1]

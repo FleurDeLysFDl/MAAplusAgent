@@ -2,12 +2,12 @@
 + 模块2.2场景B（指令执行模式下命中高危操作，同步阻塞询问用户）。
 
 流程：
-1. core/intent_router.py的route_intent()先定位——查已沉淀的技能库
-   （core/skill_store.py），查不到就在状态图里语义搜索最接近的已知节点
-2. 连接真实设备（复用core/navigate_demo.py的connect_device等），把定位结果
+1. core/intent/intent_router.py的route_intent()先定位——查已沉淀的技能库
+   （core/memory/skill_store.py），查不到就在状态图里语义搜索最接近的已知节点
+2. 连接真实设备（复用core/device/navigate_demo.py的connect_device等），把定位结果
    真正执行出来：run_known_task就重放技能的action_sequence；
    navigate_to_state就用ExplorationMemory.path_to()导航过去（复用
-   core/review_pending.py的_navigate_to）——这条路径本身不需要额外的风险
+   core/tools/review_pending.py的_navigate_to）——这条路径本身不需要额外的风险
    确认，因为图里的边本来就是探索阶段已经通过RiskGate场景A校验过的已知动作，
    真正高危的候选在探索时就已经被跳过、从没成为图里的一条边
 3. 只有重放技能（action_sequence可能是手工写的，没有经过场景A筛选）时才逐步
@@ -15,7 +15,7 @@
    在终端里直接问用户要不要继续——指令执行是用户主动发起的，用户此刻大概率
    在场，这是场景B跟场景A的核心区别
 4. 已知技能库和状态图里都找不到匹配目标：进入目标导向探测（模块1.2）——按
-   core/intent_router.py的rank_ocr_candidates_by_relevance给当前界面还没试过
+   core/intent/intent_router.py的rank_ocr_candidates_by_relevance给当前界面还没试过
    的候选跟intent的相关性打分，从最相关的开始试。文档原文是"LLM给候选打分，
    多步循环直到intent_satisfied()"；这里没有接LLM，"是否满足意图"这种语义
    判断没法用字符2-gram重合度硬判——与其伪造一个不可靠的自动判断，不如每次
@@ -38,7 +38,7 @@
    "一次性意图也被存下来"这个次要问题再引入一套额外的预备计数结构的必要。
 
 用法：
-    python core/execute_intent.py <profile.yaml路径> "<用户意图>"
+    python core/intent/execute_intent.py <profile.yaml路径> "<用户意图>"
 """
 from __future__ import annotations
 
@@ -47,16 +47,16 @@ import time
 from pathlib import Path
 from typing import Any
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from exploration_memory import ExplorationMemory  # noqa: E402
-from intent_router import rank_ocr_candidates_by_relevance, route_intent  # noqa: E402
-from maa_mcp_server import _load_profile  # noqa: E402
-from navigate_demo import _capture, _perform, _visit, connect_device  # noqa: E402
-from review_pending import _navigate_to  # noqa: E402
-from risk_gate import RiskGate, load_irreversible_keywords  # noqa: E402
-from safety_guard import load_sensitive_keywords  # noqa: E402
-from skill_store import LearnedSkill, SkillStore  # noqa: E402
-from usage_log import record_usage  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from core.memory.exploration_memory import ExplorationMemory  # noqa: E402
+from core.intent.intent_router import rank_ocr_candidates_by_relevance, route_intent  # noqa: E402
+from core.device.maa_mcp_server import _load_profile  # noqa: E402
+from core.device.navigate_demo import _capture, _perform, _visit, connect_device  # noqa: E402
+from core.tools.review_pending import _navigate_to  # noqa: E402
+from core.safety.risk_gate import RiskGate, load_irreversible_keywords  # noqa: E402
+from core.safety.safety_guard import load_sensitive_keywords  # noqa: E402
+from core.memory.skill_store import LearnedSkill, SkillStore  # noqa: E402
+from core.memory.usage_log import record_usage  # noqa: E402
 
 
 def _consolidate_navigate_skill(
@@ -160,7 +160,7 @@ def main() -> None:
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
     if len(sys.argv) < 3:
-        print('用法: python execute_intent.py <profile.yaml路径> "<用户意图>"', file=sys.stderr)
+        print('用法: python core/intent/execute_intent.py <profile.yaml路径> "<用户意图>"', file=sys.stderr)
         sys.exit(1)
 
     profile_path, intent = sys.argv[1], sys.argv[2]

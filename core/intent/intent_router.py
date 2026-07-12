@@ -1,16 +1,16 @@
 """意图→目标定位：对应 软件探索Agent三大功能模块设计.md 模块1.1。
 
 三级查找顺序（跟文档execute_intent()一致）：
-1. match_known_task：已经沉淀的技能库（core/skill_store.py管理的LearnedSkill，
+1. match_known_task：已经沉淀的技能库（core/memory/skill_store.py管理的LearnedSkill，
    模块1.3"技能沉淀"负责往里面写，这里只负责查）里有没有直接对得上的
 2. semantic_search_states：状态图（ExplorationMemory）里有没有语义上接近目标
-   的已知节点，有就直接导航过去（复用core/exploration_memory.py的path_to）
+   的已知节点，有就直接导航过去（复用core/memory/exploration_memory.py的path_to）
 3. 都没有：回退给goal_directed_probe（模块1.2，还没实现），这里只返回一个
    "需要探测"的信号，不在这个模块里实现探测本身
 
 跟真实语义/embedding搜索不一样：这里的"语义匹配"用的是字符2-gram的Jaccard
 重合度（_char_bigrams/_text_similarity），不是向量检索。中文没有天然的词
-边界，项目里也没有引入分词依赖（jieba之类），拿core/exploration_memory.py
+边界，项目里也没有引入分词依赖（jieba之类），拿core/memory/exploration_memory.py
 那套_stable_tokens/_similarity直接用在整句话上不合适——那套是给OCR每一条
 独立的短文本框设计的，会把一整句话当成单独一个token，两句话只要不完全相等/
 互为子串就相似度为0，实测对"去商城兑换东西"这种自然语言意图完全不work。
@@ -25,9 +25,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from exploration_memory import ExplorationMemory  # noqa: E402
-from skill_store import LearnedSkill, SkillStore  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from core.memory.exploration_memory import ExplorationMemory  # noqa: E402
+from core.memory.skill_store import LearnedSkill, SkillStore  # noqa: E402
 
 # 语义搜索/技能匹配的最低相似度门槛：低于这个分数就当"没找到"，交给goal_directed_probe
 # 兜底，而不是勉强导航到一个字面沾点边、实际风马牛不相及的节点/技能。2-gram Jaccard
@@ -123,7 +123,7 @@ def rank_ocr_candidates_by_relevance(
 
 def route_intent(intent: str, game_id: str, *, storage_dir: str = "exploration_logs") -> dict[str, Any]:
     """execute_intent()的"定位"这一半：只判断该走哪条路、目标是谁，不负责真的
-    执行（执行需要连真实设备，见core/execute_intent.py）。
+    执行（执行需要连真实设备，见core/intent/execute_intent.py）。
 
     storage_dir默认"exploration_logs"（真实数据的位置），测试时传tmp_path
     隔离，不碰真实数据。

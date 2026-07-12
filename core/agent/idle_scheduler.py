@@ -2,7 +2,7 @@
 
 跟文档原始设计有一处不得不做的简化：文档假设"探索驱动层"能一次只跑单步
 （explore_one_step），空闲判定和执行在同一个tick循环里；本项目的探索驱动层
-（core/agent_runner.py的ReActAgent循环）是"一次调用跑到Finish/max_steps"的
+（core/agent/agent_runner.py的ReActAgent循环）是"一次调用跑到Finish/max_steps"的
 整段式设计，没有"跑一步就把控制权交还调用方"这个粒度，要做到真正的单步会
 牵动ReActAgent的核心循环，代价太大。这里退一步：空闲超过阈值时启动一整段
 探索（子进程，遵照profile.yaml自己的max_steps/min_new_nodes），而不是原子的
@@ -11,14 +11,14 @@
 子进程"而不是"一步"。
 
 调度依据两个信号：
-1. 空闲判定：core/agent_runner.py.USER_ACTIVITY_MARKER这个标记文件的mtime——
+1. 空闲判定：core/agent/agent_runner.py.USER_ACTIVITY_MARKER这个标记文件的mtime——
    agent_runner.py带指令跑（意图执行）时会主动touch它，调度器只读不写
-2. 是否"探得差不多了"：复用core/progress_estimate.py的frontier_progress+
+2. 是否"探得差不多了"：复用core/memory/progress_estimate.py的frontier_progress+
    discovery_rate（模块0.2），两个指标都达标才不再自动探索，避免打满一次又
    一次没有意义的探索会话
 
 用法（持续跑在前台，或者配合任务计划程序/systemd这类工具常驻）：
-    python core/idle_scheduler.py <profile.yaml路径> [idle_threshold_s] [poll_interval_s]
+    python core/agent/idle_scheduler.py <profile.yaml路径> [idle_threshold_s] [poll_interval_s]
 """
 from __future__ import annotations
 
@@ -27,12 +27,12 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from agent_runner import USER_ACTIVITY_MARKER, load_profile  # noqa: E402
-from exploration_memory import ExplorationMemory  # noqa: E402
-from progress_estimate import discovery_rate, frontier_progress  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from core.agent.agent_runner import USER_ACTIVITY_MARKER, load_profile  # noqa: E402
+from core.memory.exploration_memory import ExplorationMemory  # noqa: E402
+from core.memory.progress_estimate import discovery_rate, frontier_progress  # noqa: E402
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 AGENT_RUNNER_SCRIPT = Path(__file__).resolve().parent / "agent_runner.py"
 TRACE_DIR = PROJECT_ROOT / "memory" / "traces"
 
@@ -55,7 +55,7 @@ def seconds_since_last_activity() -> float:
 
 
 def is_fully_explored(game_id: str, window: int = 20) -> bool:
-    """两个指标（见core/progress_estimate.py）都达标才认为"探得差不多了"：
+    """两个指标（见core/memory/progress_estimate.py）都达标才认为"探得差不多了"：
     frontier_progress>0.9且discovery_rate<0.1，任一指标不达标都继续探索。
     没有任何trace文件（从没跑过）时，直接认为没探完，不用等指标。
     """
@@ -112,7 +112,7 @@ def main() -> None:
 
     if len(sys.argv) < 2:
         print(
-            "用法: python idle_scheduler.py <profile.yaml路径> [idle_threshold_s] [poll_interval_s]",
+            "用法: python core/agent/idle_scheduler.py <profile.yaml路径> [idle_threshold_s] [poll_interval_s]",
             file=sys.stderr,
         )
         sys.exit(1)

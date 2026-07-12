@@ -1,10 +1,10 @@
-"""core/safety_guard.py的单元测试：坐标白名单校验、禁止点击区域、敏感词拦截。"""
+"""core/safety/safety_guard.py的单元测试：坐标白名单校验、禁止点击区域、敏感词拦截。"""
 from __future__ import annotations
 
 import pytest
 import yaml
 
-from safety_guard import (
+from core.safety.safety_guard import (
     GLOBAL_SENSITIVE_KEYWORDS,
     CoordinateRejected,
     SafetyGuard,

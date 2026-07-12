@@ -1,7 +1,7 @@
-"""core/risk_gate.py的单元测试：风险评估 + 待确认队列的持久化。"""
+"""core/safety/risk_gate.py的单元测试：风险评估 + 待确认队列的持久化。"""
 from __future__ import annotations
 
-from risk_gate import DEFAULT_IRREVERSIBLE_KEYWORDS, PendingConfirmationQueue, RiskGate
+from core.safety.risk_gate import DEFAULT_IRREVERSIBLE_KEYWORDS, PendingConfirmationQueue, RiskGate
 
 
 class TestRiskGateAssess:

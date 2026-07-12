@@ -1,6 +1,6 @@
 """高危操作确认Harness：对应 软件探索Agent三大功能模块设计.md 模块2。
 
-跟core/safety_guard.py的分工不是一回事：
+跟core/safety/safety_guard.py的分工不是一回事：
 - SafetyGuard做的是硬校验/整屏拦截——坐标越界、命中click_forbidden区域直接拒绝
   执行，整屏OCR命中敏感词直接告警终止会话。这三种情况都不该被绕过，跟"用户是否
   在场"无关。
@@ -123,7 +123,7 @@ class PendingConfirmationQueue:
 
     def remove(self, index: int) -> dict[str, Any]:
         """移除并返回index位置的待确认项——放行执行后，或者用户审阅完决定不管了，
-        都要从队列里摘掉，不然下次审阅还会重复看到同一条（见core/review_pending.py）"""
+        都要从队列里摘掉，不然下次审阅还会重复看到同一条（见core/tools/review_pending.py）"""
         item = self.items.pop(index)
         self._save()
         return item

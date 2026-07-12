@@ -18,12 +18,12 @@
 - 两个指标都高：那次会话大概率已经在做无意义的重复尝试，该考虑喊停
 
 frontier_progress读ExplorationMemory持久化的节点+操作图（跨会话累积，见
-core/exploration_memory.py）；discovery_rate读单次会话的trace-*.jsonl
-（memory/traces/下，core/agent_runner.py每次跑生成的那份，core/log_broadcaster.py
+core/memory/exploration_memory.py）；discovery_rate读单次会话的trace-*.jsonl
+（memory/traces/下，core/agent/agent_runner.py每次跑生成的那份，core/agent/log_broadcaster.py
 实时转播的也是这份数据），只反映"这一段时间"，不需要额外新增日志格式。
 
 用法（离线验证，跟已有trace文件对齐）：
-    python core/progress_estimate.py <game_id> <trace文件路径> [window]
+    python core/memory/progress_estimate.py <game_id> <trace文件路径> [window]
 """
 from __future__ import annotations
 
@@ -32,8 +32,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from exploration_memory import ExplorationMemory  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from core.memory.exploration_memory import ExplorationMemory  # noqa: E402
 
 
 def frontier_progress(memory: ExplorationMemory) -> float:
@@ -104,7 +104,7 @@ def main() -> None:
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
     if len(sys.argv) < 3:
-        print("用法: python progress_estimate.py <game_id> <trace文件路径> [window]", file=sys.stderr)
+        print("用法: python core/memory/progress_estimate.py <game_id> <trace文件路径> [window]", file=sys.stderr)
         sys.exit(1)
 
     game_id, trace_path = sys.argv[1], sys.argv[2]

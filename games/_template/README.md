@@ -9,9 +9,9 @@
 4. 按需创建`sensitive_keywords.yaml`，补充本游戏专属敏感词
 5. 启动MCP Server验证能连上设备：
    ```
-   python core/maa_mcp_server.py games/新游戏/profile.yaml
+   python core/device/maa_mcp_server.py games/新游戏/profile.yaml
    ```
-6. 用`core/agent_runner.py`连这个profile开始探索
+6. 用`core/agent/agent_runner.py`连这个profile开始探索
 
 **判断标准**：接入过程中`core/`目录一行代码都不改，才算真正通用；如果需要改核心代码，
 说明某个游戏相关的东西之前被错误地写死在核心层了。

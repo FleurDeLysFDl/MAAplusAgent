@@ -1,14 +1,14 @@
-"""真实设备导航演示：拿现有探索记忆（core/exploration_memory.py）里已经验证过的
+"""真实设备导航演示：拿现有探索记忆（core/memory/exploration_memory.py）里已经验证过的
 节点+操作图，实际驱动模拟器从当前画面走到指定的目标节点，边走边截图确认每一步
-落地是否符合预期——跟core/maa_mcp_server.py里screenshot()的自动导航是同一套
+落地是否符合预期——跟core/device/maa_mcp_server.py里screenshot()的自动导航是同一套
 ExplorationMemory.path_to()/get_actions()逻辑，只是单独拎出来跑、不需要起MCP
 Server、也不需要LLM参与，纯粹展示"已知图能不能真把设备带到目标节点"。
 
-复用core/maa_mcp_server.py里"连接设备+加载资源"那部分模块级函数（_load_profile/
+复用core/device/maa_mcp_server.py里"连接设备+加载资源"那部分模块级函数（_load_profile/
 _resolve_adb/_bind_resource），不复用build_server()内部的MCP工具包装。
 
 用法：
-    python core/navigate_demo.py <profile.yaml路径> <目标node_id>
+    python core/device/navigate_demo.py <profile.yaml路径> <目标node_id>
 """
 from __future__ import annotations
 
@@ -25,12 +25,12 @@ from maa.pipeline import JOCR, JRecognitionType
 from maa.resource import Resource
 from maa.tasker import Tasker
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from emulator import ensure_emulator_ready  # noqa: E402
-from exploration_memory import ExplorationMemory  # noqa: E402
-from image_similarity import images_look_same  # noqa: E402
-from maa_mcp_server import _bind_resource, _load_profile, _resolve_adb  # noqa: E402
-from safety_guard import (  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from core.device.emulator import ensure_emulator_ready  # noqa: E402
+from core.memory.exploration_memory import ExplorationMemory  # noqa: E402
+from core.memory.image_similarity import images_look_same  # noqa: E402
+from core.device.maa_mcp_server import _bind_resource, _load_profile, _resolve_adb  # noqa: E402
+from core.safety.safety_guard import (  # noqa: E402
     SafetyGuard,
     load_click_forbidden_keywords,
     load_sensitive_keywords,
@@ -89,14 +89,14 @@ def _perform(controller: AdbController, safety_guard: SafetyGuard, action_type: 
 def connect_device(profile: dict[str, Any]) -> tuple[Tasker, AdbController, SafetyGuard]:
     """拉起模拟器+连接设备+加载OCR资源，返回可以直接拿去截图/点击的三件套。
 
-    core/navigate_demo.py和core/review_pending.py共用这套连接逻辑——两边都是
-    "不起MCP Server、不需要LLM参与，直接用MaaFramework摸设备"的场景。
+    core/device/navigate_demo.py和core/tools/review_pending.py共用这套连接逻辑——
+    两边都是"不起MCP Server、不需要LLM参与，直接用MaaFramework摸设备"的场景。
     """
     game_id = profile["game_id"]
     ensure_emulator_ready(profile)
 
     Tasker.set_stdout_level(LoggingLevelEnum.Off)
-    Tasker.set_log_dir(Path(__file__).resolve().parent.parent / "exploration_logs" / "maa_debug" / game_id)
+    Tasker.set_log_dir(Path(__file__).resolve().parents[2] / "exploration_logs" / "maa_debug" / game_id)
 
     adb_path, address = _resolve_adb(profile)
     controller = AdbController(adb_path=adb_path, address=address)
@@ -123,7 +123,7 @@ def main() -> None:
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
     if len(sys.argv) < 3:
-        print("用法: python navigate_demo.py <profile.yaml路径> <目标node_id>", file=sys.stderr)
+        print("用法: python core/device/navigate_demo.py <profile.yaml路径> <目标node_id>", file=sys.stderr)
         sys.exit(1)
 
     profile_path, target_id = sys.argv[1], sys.argv[2]

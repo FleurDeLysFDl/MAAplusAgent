@@ -1,7 +1,7 @@
-"""core/usage_log.py的单元测试：不同app（game_id）的使用记录互不干扰。"""
+"""core/memory/usage_log.py的单元测试：不同app（game_id）的使用记录互不干扰。"""
 from __future__ import annotations
 
-from usage_log import build_usage_context, read_usage_log, record_usage, summarize_usage
+from core.memory.usage_log import build_usage_context, read_usage_log, record_usage, summarize_usage
 
 
 class TestRecordAndReadUsage:

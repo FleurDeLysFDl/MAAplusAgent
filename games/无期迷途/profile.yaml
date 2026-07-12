@@ -30,7 +30,7 @@ max_steps: 300
 
 # 之前几轮实测LLM发现个位数新界面（is_novel=True）就会主动调用Finish收尾，探索图
 # 一直很碎（见exploration_logs/wuqimitu，12个连通分量）。这里定一个硬指标：本次至少
-# 发现30个新节点才允许Finish真正生效，不够就被core/react_agent_vision.py拦回去继续走，
+# 发现30个新节点才允许Finish真正生效，不够就被core/agent/react_agent_vision.py拦回去继续走，
 # max_steps=300还是最终兜底，不会真死循环
 min_new_nodes: 30
 
